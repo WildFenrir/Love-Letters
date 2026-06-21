@@ -32,6 +32,7 @@ const logoutBtn = document.getElementById('logout-btn');
 
 // ========== State ==========
 let isUserLoggedIn = false;
+let latestNoteId = null;
 const cache = {
   notes: null,
   moods: null,
