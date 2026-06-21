@@ -1,0 +1,36 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Записки: админ пишет, все читают
+    match /notes/{noteId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Настроения: получатель пишет, админ читает
+    match /moods/{moodId} {
+      allow read: if request.auth != null;
+      allow create: if true;
+      // Запрещаем обновление и удаление чужих записей
+      allow update, delete: if request.auth != null && 
+                               resource.data.userId == request.auth.uid;
+    }
+    
+    // Отзывы: получатель пишет, админ читает
+    match /reviews/{reviewId} {
+      allow read: if request.auth != null;
+      allow create: if true;
+      allow update, delete: if request.auth != null && 
+                               resource.data.userId == request.auth.uid;
+    }
+    
+    // Желания: получатель пишет, админ читает
+    match /wishes/{wishId} {
+      allow read: if request.auth != null;
+      allow create: if true;
+      allow update, delete: if request.auth != null && 
+                               resource.data.userId == request.auth.uid;
+    }
+  }
+}

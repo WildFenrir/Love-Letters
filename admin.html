@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Админ-панель | Секретные Записки</title>
+  <meta name="description" content="Управление записками">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔐</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-heart">🔐</div>
+      <h1>Админ-панель</h1>
+      <p>Управление записками</p>
+    </header>
+
+    <!-- Навигация -->
+    <nav class="admin-nav" id="admin-nav" style="display: flex;">
+      <a href="index.html" class="btn btn-secondary" target="_blank">
+        👁️ Просмотровая страница
+      </a>
+      <button class="btn btn-danger" id="logout-btn" style="display: none;">
+        🚪 Выйти
+      </button>
+    </nav>
+
+    <!-- Login Modal -->
+    <div class="modal-overlay" id="login-modal">
+      <div class="modal">
+        <h2>🔐 Вход для админа</h2>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input 
+            type="email" 
+            class="form-input" 
+            id="admin-email" 
+            placeholder="admin@example.com"
+          >
+        </div>
+        <div class="form-group">
+          <label class="form-label">Пароль</label>
+          <input 
+            type="password" 
+            class="form-input" 
+            id="admin-password" 
+            placeholder="••••••••"
+          >
+        </div>
+        <button class="btn btn-primary" id="login-btn" style="width: 100%;">
+          Войти
+        </button>
+        <p style="margin-top: 15px; color: var(--text-muted); font-size: 0.9rem;">
+          Используйте Firebase Authentication
+        </p>
+      </div>
+    </div>
+
+    <!-- Admin Content (скрыт до авторизации) -->
+    <div id="admin-content" style="display: none;">
+      
+      <!-- Edit Modal -->
+      <div class="modal-overlay" id="edit-modal">
+        <div class="modal modal-large">
+          <h2>✏️ Редактирование записки</h2>
+          <div class="form-group">
+            <label class="form-label">Заголовок</label>
+            <input 
+              type="text" 
+              class="form-input" 
+              id="edit-note-title"
+              maxlength="100"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Текст записки</label>
+            <textarea 
+              class="form-textarea" 
+              id="edit-note-content"
+              maxlength="2000"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Дата публикации</label>
+            <input 
+              type="datetime-local" 
+              class="form-input" 
+              id="edit-note-date"
+            >
+          </div>
+          <div class="admin-actions" style="justify-content: center; gap: 15px;">
+            <button class="btn btn-secondary" id="edit-preview-btn">
+              👁️ Предпросмотр
+            </button>
+            <button class="btn btn-primary" id="edit-save-btn">
+              💾 Сохранить
+            </button>
+            <button class="btn btn-secondary" id="edit-cancel-btn">
+              ❌ Отмена
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preview Modal для редактирования -->
+      <div class="modal-overlay" id="edit-preview-modal">
+        <div class="modal">
+          <h2>👁️ Предпросмотр</h2>
+          <div id="edit-preview-content" style="text-align: left;"></div>
+          <button class="btn btn-secondary" id="edit-preview-close-btn" style="margin-top: 20px;">
+            Закрыть
+          </button>
+        </div>
+      </div>
+
+      <!-- Форма добавления записки -->
+      <section class="section">
+        <h2 class="section-title">📝 Новая записка</h2>
+        <div class="card">
+          <div class="form-group">
+            <label class="form-label">Направление</label>
+            <div style="display: flex; gap: 15px; margin-top: 10px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 15px; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: white; border-radius: var(--radius-sm);">
+                <input type="radio" name="note-direction" value="admin_to_user" checked style="accent-color: var(--accent-primary);">
+                📤 Вам → Получателю
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 10px 15px; background: linear-gradient(135deg, var(--success), #22c55e); color: white; border-radius: var(--radius-sm);">
+                <input type="radio" name="note-direction" value="user_to_admin" style="accent-color: var(--success);">
+                📥 Получатель → Вам
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Заголовок</label>
+            <input 
+              type="text" 
+              class="form-input" 
+              id="note-title" 
+              placeholder="Например: Доброе утро!"
+              maxlength="100"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Текст записки</label>
+            <textarea 
+              class="form-textarea" 
+              id="note-content" 
+              placeholder="Напиши что-нибудь тёплое...&#10;&#10;Поддерживается простой markdown:&#10;**жирный**, *курсив*&#10;- списки&#10;[ссылки](https://example.com)"
+              maxlength="2000"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Дата публикации</label>
+            <input 
+              type="datetime-local" 
+              class="form-input" 
+              id="note-date"
+            >
+            <p style="margin-top: 8px; color: var(--text-muted); font-size: 0.85rem;">
+              Оставьте пустым для текущей даты
+            </p>
+          </div>
+          <div class="admin-actions">
+            <button class="btn btn-primary" id="add-note-btn">
+              ➕ Опубликовать записку
+            </button>
+            <button class="btn btn-secondary" id="preview-note-btn">
+              👁️ Предпросмотр
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Предпросмотр -->
+      <section class="section" id="preview-section" style="display: none;">
+        <h2 class="section-title">👁️ Предпросмотр</h2>
+        <div class="card" id="preview-card">
+          <!-- Сюда будет вставлен предпросмотр -->
+        </div>
+      </section>
+
+      <!-- Список записок -->
+      <section class="section">
+        <h2 class="section-title">📋 Все записки</h2>
+        <div id="admin-notes-container">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Настроения -->
+      <section class="section">
+        <h2 class="section-title">😊 Настроения получателя</h2>
+        <div id="admin-moods-container">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Отзывы -->
+      <section class="section">
+        <h2 class="section-title">💭 Отзывы получателя о дне</h2>
+        <div id="admin-reviews-container">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Желания -->
+      <section class="section">
+        <h2 class="section-title">✨ Её желания</h2>
+        <div id="admin-wishes-container">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Отправить настроение (админ) -->
+      <section class="section">
+        <h2 class="section-title">😊 Отправить настроение от админа</h2>
+        <div class="card">
+          <p style="margin-bottom: 15px; color: var(--text-secondary);">
+            Отправьте ваше текущее настроение
+          </p>
+          <div class="mood-selector" id="admin-mood-selector">
+            <button class="mood-btn" data-mood="excellent" title="Отлично">🤩</button>
+            <button class="mood-btn" data-mood="good" title="Хорошо">😊</button>
+            <button class="mood-btn" data-mood="neutral" title="Нормально">😐</button>
+            <button class="mood-btn" data-mood="sad" title="Грустно">😢</button>
+            <button class="mood-btn" data-mood="angry" title="Злюсь">😤</button>
+          </div>
+          <input 
+            type="text" 
+            class="mood-comment" 
+            id="admin-mood-comment" 
+            placeholder="Расскажите, что у вас случилось..." 
+            maxlength="200"
+          >
+          <button class="btn btn-primary" id="admin-submit-mood-btn">
+            💕 Отправить настроение
+          </button>
+        </div>
+      </section>
+      
+      <!-- Отправить отзыв (админ) -->
+      <section class="section">
+        <h2 class="section-title">💭 Отправить отзыв от админа</h2>
+        <div class="card">
+          <p style="margin-bottom: 15px; color: var(--text-secondary);">
+            Оцените день и оставьте отзыв
+          </p>
+          <div class="star-rating" id="admin-star-rating">
+            <span data-rating="1">☆</span>
+            <span data-rating="2">☆</span>
+            <span data-rating="3">☆</span>
+            <span data-rating="4">☆</span>
+            <span data-rating="5">☆</span>
+          </div>
+          <textarea 
+            class="form-textarea" 
+            id="admin-review-text" 
+            placeholder="Напишите ваш отзыв о дне..." 
+            maxlength="500"
+            style="margin-top: 15px;"
+          ></textarea>
+          <button class="btn btn-primary" id="admin-submit-review-btn" style="margin-top: 15px;">
+            📤 Отправить отзыв
+          </button>
+        </div>
+      </section>
+      
+      <!-- Добавить желание (админ) -->
+      <section class="section">
+        <h2 class="section-title">✨ Добавить желание от админа</h2>
+        <div class="card">
+          <p style="margin-bottom: 15px; color: var(--text-secondary);">
+            Добавьте желание для получателя
+          </p>
+          <div class="form-group">
+            <label class="form-label">Название желания</label>
+            <input 
+              type="text" 
+              class="form-input" 
+              id="admin-wish-title" 
+              placeholder="Например: Хочу посетить Париж"
+              maxlength="100"
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label">Описание</label>
+            <textarea 
+              class="form-textarea" 
+              id="admin-wish-description" 
+              placeholder="Опишите желание подробнее..." 
+              maxlength="500"
+            ></textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Изображение (необязательно)</label>
+            <div class="file-input-wrapper" id="admin-wish-drop-zone">
+              <button class="btn btn-secondary" type="button">
+                📷 Выбрать изображение
+              </button>
+              <input 
+                type="file" 
+                id="admin-wish-image" 
+                accept="image/*" 
+                style="display: none;"
+              >
+            </div>
+            <p class="drop-zone-text" id="admin-drop-zone-text">
+              или перетащите изображение сюда
+            </p>
+            <div class="image-preview-container" id="admin-image-preview-container" style="display: none;">
+              <img id="admin-wish-preview" class="wishes-image-preview" alt="Предпросмотр">
+              <button class="btn-remove-image" id="admin-remove-image-btn" type="button" title="Удалить изображение">
+                ✕
+              </button>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="admin-add-wish-btn">
+            ➕ Добавить желание
+          </button>
+        </div>
+      </section>
+        
+      <!-- Тема получателя -->
+      <section class="section">
+        <h2 class="section-title">🎨 Тема получателя</h2>
+        <div class="card" id="recipient-theme-card">
+          <div class="loading">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </section>
+        
+      <!-- Статистика -->
+      <section class="section">
+        <h2 class="section-title">📊 Статистика за всё время</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+          <div class="card" style="text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">📝</div>
+            <div style="font-size: 2rem; font-weight: 700; color: var(--accent-primary);" id="stats-notes">0</div>
+            <div style="color: var(--text-secondary);">Записок</div>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">😊</div>
+            <div style="font-size: 2rem; font-weight: 700; color: var(--success);" id="stats-moods">0</div>
+            <div style="color: var(--text-secondary);">Записей настроения</div>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">💭</div>
+            <div style="font-size: 2rem; font-weight: 700; color: var(--warning);" id="stats-reviews">0</div>
+            <div style="color: var(--text-secondary);">Отзывов</div>
+          </div>
+          <div class="card" style="text-align: center;">
+            <div style="font-size: 2.5rem; margin-bottom: 10px;">✨</div>
+            <div style="font-size: 2rem; font-weight: 700; color: var(--accent-secondary);" id="stats-wishes">0</div>
+            <div style="color: var(--text-secondary);">Желаний</div>
+          </div>
+        </div>
+      </section>
+        
+      <!-- Детальная статистика -->
+      <section class="section">
+        <h2 class="section-title">📈 Детальная статистика</h2>
+        
+        <!-- Распределение настроений -->
+        <div class="card">
+          <h3 style="margin-bottom: 20px; color: var(--accent-secondary);">😊 Распределение настроений</h3>
+          <div id="mood-stats-container">
+            <div class="loading">
+              <div class="spinner"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Статистика отзывов -->
+        <div class="card" style="margin-top: 20px;">
+          <h3 style="margin-bottom: 20px; color: var(--accent-secondary);">⭐ Средняя оценка записок</h3>
+          <div id="review-stats-container">
+            <div class="loading">
+              <div class="spinner"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Активность по месяцам -->
+        <div class="card" style="margin-top: 20px;">
+          <h3 style="margin-bottom: 20px; color: var(--accent-secondary);">📅 Активность за последние 6 месяцев</h3>
+          <div id="activity-stats-container">
+            <div class="loading">
+              <div class="spinner"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Theme Toggle Button -->
+  <button class="theme-toggle-btn" id="theme-toggle-btn" title="Выбрать тему">
+    🎨
+  </button>
+
+  <!-- Theme Selector Modal -->
+  <div class="theme-modal-overlay" id="theme-modal-overlay">
+    <div class="theme-modal">
+      <div class="theme-modal-header">
+        <h2 class="theme-modal-title">🎨 Выберите тему</h2>
+        <button class="theme-modal-close" id="theme-modal-close">×</button>
+      </div>
+      
+      <!-- Tabs -->
+      <div class="theme-tabs">
+        <button class="theme-tab active" data-tab="color-themes">
+          🎨 Цвета
+        </button>
+        <button class="theme-tab" data-tab="texture-themes">
+          🖼️ Текстуры
+        </button>
+        <button class="theme-tab" data-tab="custom-themes">
+          ✨ Свои
+        </button>
+      </div>
+      
+      <!-- Tab Content: Color Themes -->
+      <div class="theme-tab-content active" id="color-themes">
+        <div class="theme-options">
+          <div class="theme-option" data-theme="classic">
+            <div class="theme-option-preview classic"></div>
+            <div class="theme-option-name">Классическая</div>
+            <div class="theme-option-desc">Фиолетовая гамма</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+          <div class="theme-option" data-theme="nature">
+            <div class="theme-option-preview nature"></div>
+            <div class="theme-option-name">Природа</div>
+            <div class="theme-option-desc">Зелёная, свежесть</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+          <div class="theme-option" data-theme="ocean">
+            <div class="theme-option-preview ocean"></div>
+            <div class="theme-option-name">Океан</div>
+            <div class="theme-option-desc">Синяя, спокойствие</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+          <div class="theme-option" data-theme="dark">
+            <div class="theme-option-preview dark"></div>
+            <div class="theme-option-name">Тёмная</div>
+            <div class="theme-option-desc">Ночной режим</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+          <div class="theme-option" data-theme="sunset">
+            <div class="theme-option-preview sunset"></div>
+            <div class="theme-option-name">Закат</div>
+            <div class="theme-option-desc">Оранжевая, тепло</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Tab Content: Texture Themes -->
+      <div class="theme-tab-content" id="texture-themes">
+        <div class="theme-options">
+          <div class="theme-option" data-theme="texture-light">
+            <div class="theme-option-preview texture-light"></div>
+            <div class="theme-option-name">Светлая текстура</div>
+            <div class="theme-option-desc">Геометрический узор</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+          <div class="theme-option" data-theme="texture-dark">
+            <div class="theme-option-preview texture-dark"></div>
+            <div class="theme-option-name">Тёмная текстура</div>
+            <div class="theme-option-desc">Карбоновый узор</div>
+            <div class="theme-checkmark">✓</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Tab Content: Custom Themes -->
+      <div class="theme-tab-content" id="custom-themes">
+        <div class="theme-options" id="custom-themes-list"></div>
+        <button class="btn btn-primary" id="create-theme-btn" style="width: 100%; margin-top: 15px;">
+          ➕ Создать свою тему
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Theme Creator Modal -->
+  <div class="theme-modal-overlay" id="theme-creator-overlay">
+    <div class="theme-modal theme-creator-modal">
+      <div class="theme-modal-header">
+        <h2 class="theme-modal-title">✨ Создать тему</h2>
+        <button class="theme-modal-close" id="theme-creator-close">×</button>
+      </div>
+      
+      <div class="theme-creator-content">
+        <div class="form-group">
+          <label class="form-label">Название темы</label>
+          <input type="text" class="form-input" id="theme-name-input" placeholder="Например: Моя тема" maxlength="50">
+        </div>
+        
+        <div class="theme-creator-section">
+          <h3 style="margin-bottom: 15px;">🎨 Основные цвета</h3>
+          <div class="color-picker-grid">
+            <div class="color-picker-item">
+              <label>Фон страницы</label>
+              <input type="color" id="color-bg-primary" value="#f5f3ff">
+            </div>
+            <div class="color-picker-item">
+              <label>Фон карточек</label>
+              <input type="color" id="color-bg-card" value="#ffffff">
+            </div>
+            <div class="color-picker-item">
+              <label>Основной текст</label>
+              <input type="color" id="color-text-primary" value="#1a0f2e">
+            </div>
+            <div class="color-picker-item">
+              <label>Акцент 1</label>
+              <input type="color" id="color-accent-primary" value="#6b11cb">
+            </div>
+            <div class="color-picker-item">
+              <label>Акцент 2</label>
+              <input type="color" id="color-accent-secondary" value="#a855f7">
+            </div>
+            <div class="color-picker-item">
+              <label>Рамки</label>
+              <input type="color" id="color-border" value="#d0c7e3">
+            </div>
+          </div>
+        </div>
+        
+        <div class="theme-creator-section">
+          <h3 style="margin-bottom: 15px;">🖼️ Текстура фона</h3>
+          <div class="texture-options">
+            <div class="texture-option selected" data-texture="none">
+              <div class="texture-preview" style="background: #f5f3ff;"></div>
+              <span>Без текстуры</span>
+            </div>
+            <div class="texture-option" data-texture="dots">
+              <div class="texture-preview" style="background-image: radial-gradient(#6b11cb 1px, transparent 1px); background-size: 20px 20px;"></div>
+              <span>Точки</span>
+            </div>
+            <div class="texture-option" data-texture="grid">
+              <div class="texture-preview" style="background-image: linear-gradient(#6b11cb 1px, transparent 1px), linear-gradient(90deg, #6b11cb 1px, transparent 1px); background-size: 30px 30px; opacity: 0.3;"></div>
+              <span>Сетка</span>
+            </div>
+            <div class="texture-option" data-texture="carbon">
+              <div class="texture-preview" style="background: repeating-linear-gradient(45deg, #2a2a2a 0, #2a2a2a 2px, #1a1a1a 2px, #1a1a1a 4px);"></div>
+              <span>Карбон</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="theme-creator-section">
+          <h3 style="margin-bottom: 15px;">✨ Анимации</h3>
+          <div class="animation-options">
+            <label class="animation-option">
+              <input type="checkbox" id="anim-buttons" checked>
+              <span>Анимация кнопок</span>
+            </label>
+            <label class="animation-option">
+              <input type="checkbox" id="anim-cards">
+              <span>Появление карточек</span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="theme-creator-section">
+          <h3 style="margin-bottom: 15px;">👁️ Предпросмотр</h3>
+          <div class="theme-preview-box" id="theme-preview-box">
+            <div class="preview-card">
+              <h4>Пример карточки</h4>
+              <p>Так будет выглядеть ваша тема</p>
+              <button class="btn btn-primary">Кнопка</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="theme-creator-actions">
+        <button class="btn btn-secondary" id="theme-cancel-btn">Отмена</button>
+        <button class="btn btn-primary" id="theme-save-btn">💾 Сохранить тему</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script type="module" src="admin.js"></script>
+  <script type="module" src="theme-creator.js"></script>
+</body>
+</html>
