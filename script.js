@@ -1,1486 +1,1251 @@
 /**
- * Секретные Записки - Основная логика (для получателя)
- * Работает с Supabase
+ * Love Letters - Main Application Script
+ * Memory Book, Bucket List, Love Prompts, Calendar, Playlist, Challenges, Private Vault
  */
 
-import { supabase, signInWithEmail, signOut, onAuthStateChanged, ADMIN_EMAIL } from './supabase-config.js';
-const notesContainer = document.getElementById('notes-container');
-const moodSelector = document.getElementById('mood-selector');
-const moodComment = document.getElementById('mood-comment');
-const submitMoodBtn = document.getElementById('submit-mood-btn');
-const moodHistory = document.getElementById('mood-history');
-const starRating = document.getElementById('star-rating');
-const reviewText = document.getElementById('review-text');
-const submitReviewBtn = document.getElementById('submit-review-btn');
-const reviewsList = document.getElementById('reviews-list');
-const wishTitle = document.getElementById('wish-title');
-const wishDescription = document.getElementById('wish-description');
-const wishImage = document.getElementById('wish-image');
-const wishPreview = document.getElementById('wish-preview');
-const addWishBtn = document.getElementById('add-wish-btn');
-const wishesTableBody = document.getElementById('wishes-table-body');
-const toastContainer = document.getElementById('toast-container');
-const adminBackBtn = document.getElementById('admin-back-btn');
+import { supabase } from './supabase-config.js';
+import { 
+  parseMarkdown, 
+  formatDate, 
+  showToast, 
+  initTheme,
+  setTheme,
+  uploadToStorage,
+  deleteFromStorage,
+  extractYouTubeId,
+  getYouTubeEmbedUrl,
+  initDropZone,
+  wishCategories,
+  wishStatuses,
+  generateUUID
+} from './utils.js';
 
-// ========== Auth Elements ==========
-const loginModal = document.getElementById('login-modal');
-const loginEmail = document.getElementById('login-email');
-const loginPassword = document.getElementById('login-password');
-const loginSubmitBtn = document.getElementById('login-submit-btn');
-const loginBtn = document.getElementById('login-btn');
-const logoutBtn = document.getElementById('logout-btn');
+// ========== STATE ==========
+let currentUser = null;
+let currentSection = 'memory-book';
+let calendarCurrentDate = new Date();
+let uploadedImages = [];
 
-// ========== State ==========
-let isUserLoggedIn = false;
-let latestNoteId = null;
-const cache = {
-  notes: null,
-  moods: null,
-  reviews: null,
-  wishes: null
-};
+// ========== DOM ELEMENTS ==========
+const elements = {};
 
-const cacheTimestamps = {};
-const CACHE_DURATION = 30000; // 30 секунд
-
-// Pagination state
-const pagination = {
-  moods: { page: 1, perPage: 10, total: 0 },
-  reviews: { page: 1, perPage: 10, total: 0 },
-  wishes: { page: 1, perPage: 10, total: 0 }
-};
-
-// Theme state
-let currentTheme = 'classic';
-
-// Каналы для очистки
-let notesChannel = null;
-let moodsChannel = null;
-let reviewsChannel = null;
-let wishesChannel = null;
-
-/**
- * Проверка актуальности кэша
- */
-function isCacheValid(type) {
-  return cache[type] && (Date.now() - cacheTimestamps[type]) < CACHE_DURATION;
-}
-
-/**
- * Debounce для предотвращения частых запросов
- */
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-    
-// ========== Utility Functions ==========
-
-/**
- * Показать toast уведомление
- */
-function showToast(message, type = 'success') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  toastContainer.appendChild(toast);
+function cacheElements() {
+  // Theme
+  elements.themeToggleBtn = document.getElementById('theme-toggle-btn');
+  elements.themeModalOverlay = document.getElementById('theme-modal-overlay');
+  elements.themeModalClose = document.getElementById('theme-modal-close');
+  elements.themeTabs = document.querySelectorAll('.theme-tab');
+  elements.themeTabContents = document.querySelectorAll('.theme-tab-content');
+  elements.themeOptions = document.querySelectorAll('.theme-option');
   
-  setTimeout(() => {
-    toast.remove();
-  }, 3000);
+  // Navigation
+  elements.sidebar = document.getElementById('sidebar');
+  elements.mainContent = document.getElementById('main-content');
+  elements.menuToggle = document.getElementById('menu-toggle');
+  elements.navItems = document.querySelectorAll('.nav-item');
+  
+  // Auth
+  elements.authBtn = document.getElementById('auth-btn');
+  elements.adminLink = document.getElementById('admin-link');
+  elements.authModal = document.getElementById('auth-modal');
+  elements.authEmail = document.getElementById('auth-email');
+  elements.authPassword = document.getElementById('auth-password');
+  elements.authSubmitBtn = document.getElementById('auth-submit-btn');
+  elements.authLogoutBtn = document.getElementById('auth-logout-btn');
+  
+  // Sections
+  elements.sections = {
+    'memory-book': document.getElementById('memory-book-section'),
+    'bucket-list': document.getElementById('bucket-list-section'),
+    'love-prompts': document.getElementById('love-prompts-section'),
+    'calendar': document.getElementById('calendar-section'),
+    'playlist': document.getElementById('playlist-section'),
+    'challenges': document.getElementById('challenges-section'),
+    'private-vault': document.getElementById('private-vault-section')
+  };
+  
+  // Memory Book
+  elements.memoriesContainer = document.getElementById('memories-container');
+  elements.addMemoryBtn = document.getElementById('add-memory-btn');
+  elements.memoryModal = document.getElementById('memory-modal');
+  elements.memoryTitle = document.getElementById('memory-title');
+  elements.memoryDate = document.getElementById('memory-date');
+  elements.memoryContent = document.getElementById('memory-content');
+  elements.memoryTags = document.getElementById('memory-tags');
+  elements.memoryDropZone = document.getElementById('memory-drop-zone');
+  elements.memoryImageInput = document.getElementById('memory-image');
+  elements.memoryPreviewContainer = document.getElementById('memory-preview-container');
+  elements.saveMemoryBtn = document.getElementById('save-memory-btn');
+  elements.memoryYearFilter = document.getElementById('memory-year-filter');
+  elements.memoryMonthFilter = document.getElementById('memory-month-filter');
+  elements.memoryTagFilter = document.getElementById('memory-tag-filter');
+  
+  // Bucket List
+  elements.wishesContainer = document.getElementById('wishes-container');
+  elements.addWishBtn = document.getElementById('add-wish-btn');
+  elements.wishModal = document.getElementById('wish-modal');
+  elements.wishTitle = document.getElementById('wish-title');
+  elements.wishDescription = document.getElementById('wish-description');
+  elements.wishCategory = document.getElementById('wish-category');
+  elements.wishStatus = document.getElementById('wish-status');
+  elements.saveWishBtn = document.getElementById('save-wish-btn');
+  elements.wishDropZone = document.getElementById('wish-drop-zone');
+  elements.wishImageInput = document.getElementById('wish-image');
+  elements.wishPreviewContainer = document.getElementById('wish-preview-container');
+  elements.saveWishBtn = document.getElementById('save-wish-btn');
+  elements.bucketStatusFilter = document.getElementById('bucket-status-filter');
+  elements.bucketCategoryFilter = document.getElementById('bucket-category-filter');
+  elements.bucketStats = {
+    planned: document.getElementById('stat-planned'),
+    inProgress: document.getElementById('stat-in-progress'),
+    done: document.getElementById('stat-done')
+  };
+  
+  // Calendar
+  elements.calendarGrid = document.getElementById('calendar-grid');
+  elements.calendarMonthYear = document.getElementById('calendar-month-year');
+  elements.calendarPrev = document.getElementById('calendar-prev');
+  elements.calendarNext = document.getElementById('calendar-next');
+  elements.addEventBtn = document.getElementById('add-event-btn');
+  elements.eventModal = document.getElementById('event-modal');
+  elements.eventTitle = document.getElementById('event-title');
+  elements.eventDate = document.getElementById('event-date');
+  elements.eventDescription = document.getElementById('event-description');
+  elements.eventGifts = document.getElementById('event-gifts');
+  elements.eventPlans = document.getElementById('event-plans');
+  elements.eventReminder = document.getElementById('event-reminder');
+  elements.saveEventBtn = document.getElementById('save-event-btn');
+  elements.upcomingEvents = document.getElementById('upcoming-events');
+  
+  // Playlist
+  elements.playlistContainer = document.getElementById('playlist-container');
+  elements.addSongBtn = document.getElementById('add-song-btn');
+  elements.songModal = document.getElementById('song-modal');
+  elements.songUrl = document.getElementById('song-url');
+  elements.songTitle = document.getElementById('song-title');
+  elements.saveSongBtn = document.getElementById('save-song-btn');
+  
+  // Challenges
+  elements.challengesContainer = document.getElementById('challenges-container');
+  elements.addChallengeBtn = document.getElementById('add-challenge-btn');
+  elements.challengeModal = document.getElementById('challenge-modal');
+  elements.challengeTitle = document.getElementById('challenge-title');
+  elements.challengeDescription = document.getElementById('challenge-description');
+  elements.challengeDueDate = document.getElementById('challenge-due-date');
+  elements.challengeDropZone = document.getElementById('challenge-drop-zone');
+  elements.challengeImageInput = document.getElementById('challenge-image');
+  elements.challengePreviewContainer = document.getElementById('challenge-preview-container');
+  elements.saveChallengeBtn = document.getElementById('save-challenge-btn');
+  
+  // Private Vault
+  elements.vaultDropZone = document.getElementById('vault-drop-zone');
+  elements.vaultFileInput = document.getElementById('vault-file-input');
+  elements.vaultItems = document.getElementById('vault-items');
+  elements.vaultTabs = document.querySelectorAll('.vault-tab');
+  
+  // Prompts
+  elements.promptsContainer = document.getElementById('prompts-container');
+  elements.addPromptBtn = document.getElementById('add-prompt-btn');
+  elements.promptModal = document.getElementById('prompt-modal');
+  elements.promptQuestion = document.getElementById('prompt-question');
+  elements.promptTarget = document.getElementById('prompt-target');
+  elements.savePromptBtn = document.getElementById('save-prompt-btn');
+  
+  // Modals
+  elements.modalOverlays = document.querySelectorAll('.modal-overlay');
+  elements.modalCloseButtons = document.querySelectorAll('.modal-close');
 }
 
-/**
- * Форматирование даты
- */
-function formatDate(dateString) {
-  if (!dateString) return 'Дата не указана';
-  const date = new Date(dateString);
-  return date.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
+// ========== INITIALIZATION ==========
+
+async function init() {
+  cacheElements();
+  // Load saved theme
+  const currentTheme = localStorage.getItem('love_letters_theme') || 'classic';
+  setTheme(currentTheme);
+  setupEventListeners();
+  await setupAuthListener();
+  loadSection('memory-book');
+}
+
+function setupEventListeners() {
+  // Theme Toggle
+  elements.themeToggleBtn?.addEventListener('click', () => {
+    elements.themeModalOverlay?.classList.add('active');
+  });
+  
+  elements.themeModalClose?.addEventListener('click', () => {
+    elements.themeModalOverlay?.classList.remove('active');
+  });
+  
+  elements.themeModalOverlay?.addEventListener('click', (e) => {
+    if (e.target === elements.themeModalOverlay) {
+      elements.themeModalOverlay.classList.remove('active');
+    }
+  });
+  
+  // Theme Tabs
+  elements.themeTabs?.forEach(tab => {
+    tab.addEventListener('click', () => {
+      elements.themeTabs.forEach(t => t.classList.remove('active'));
+      elements.themeTabContents.forEach(c => c.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.tab)?.classList.add('active');
+    });
+  });
+  
+  // Theme Options
+  elements.themeOptions?.forEach(option => {
+    option.addEventListener('click', () => {
+      const theme = option.dataset.theme;
+      if (theme) {
+        setTheme(theme);
+        updateThemeSelection(theme);
+      }
+    });
+  });
+  
+  // Navigation
+  elements.navItems.forEach(item => {
+    item.addEventListener('click', () => loadSection(item.dataset.section));
+  });
+  
+  // Mobile menu toggle
+  elements.menuToggle?.addEventListener('click', () => {
+    elements.sidebar.classList.toggle('active');
+  });
+  
+  // Close sidebar when clicking outside on mobile
+  document.addEventListener('click', (e) => {
+    if (window.innerWidth <= 1024 && 
+        !elements.sidebar.contains(e.target) && 
+        !elements.menuToggle?.contains(e.target)) {
+      elements.sidebar.classList.remove('active');
+    }
+  });
+  
+  // Auth
+  elements.authBtn?.addEventListener('click', () => openModal('auth-modal'));
+  elements.authSubmitBtn?.addEventListener('click', handleAuth);
+  elements.authLogoutBtn?.addEventListener('click', handleLogout);
+  
+  // Modal close
+  elements.modalCloseButtons.forEach(btn => {
+    btn.addEventListener('click', () => closeModal(btn.dataset.modal));
+  });
+  
+  elements.modalOverlays.forEach(overlay => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.classList.remove('active');
+    });
+  });
+  
+  // Memory Book
+  elements.addMemoryBtn?.addEventListener('click', () => openMemoryModal());
+  elements.saveMemoryBtn?.addEventListener('click', saveMemory);
+  elements.memoryDropZone?.addEventListener('click', () => elements.memoryImageInput?.click());
+  elements.memoryImageInput?.addEventListener('change', handleMemoryImageSelect);
+  elements.memoryYearFilter?.addEventListener('change', loadMemories);
+  elements.memoryMonthFilter?.addEventListener('change', loadMemories);
+  elements.memoryTagFilter?.addEventListener('input', debounce(loadMemories, 500));
+  initDropZone(elements.memoryDropZone, handleMemoryImageDrop);
+  
+  // Bucket List
+  elements.addWishBtn?.addEventListener('click', () => openWishModal());
+  elements.saveWishBtn?.addEventListener('click', saveWish);
+  elements.wishDropZone?.addEventListener('click', () => elements.wishImageInput?.click());
+  elements.wishImageInput?.addEventListener('change', handleWishImageSelect);
+  elements.bucketStatusFilter?.addEventListener('change', loadWishes);
+  elements.bucketCategoryFilter?.addEventListener('change', loadWishes);
+  initDropZone(elements.wishDropZone, handleWishImageDrop);
+  
+  // Prompts
+  elements.addPromptBtn?.addEventListener('click', () => openModal('prompt-modal'));
+  elements.savePromptBtn?.addEventListener('click', savePrompt);
+  
+  // Calendar
+  elements.calendarPrev?.addEventListener('click', () => changeMonth(-1));
+  elements.calendarNext?.addEventListener('click', () => changeMonth(1));
+  elements.saveEventBtn?.addEventListener('click', saveEvent);
+  
+  // Клик по дате календаря (делегирование событий)
+  elements.calendarGrid?.addEventListener('click', (e) => {
+    const dayElement = e.target.closest('.calendar-day:not(.other-month)');
+    if (dayElement) {
+      const date = dayElement.dataset.date;
+      if (date) {
+        openEventModal(date);
+      }
+    }
+  });
+  
+  // Playlist
+  elements.addSongBtn?.addEventListener('click', () => openModal('song-modal'));
+  elements.saveSongBtn?.addEventListener('click', saveSong);
+  
+  // Challenges
+  elements.addChallengeBtn?.addEventListener('click', () => openChallengeModal());
+  elements.saveChallengeBtn?.addEventListener('click', saveChallenge);
+  elements.challengeDropZone?.addEventListener('click', () => elements.challengeImageInput?.click());
+  elements.challengeImageInput?.addEventListener('change', handleChallengeImageSelect);
+  initDropZone(elements.challengeDropZone, handleChallengeImageDrop);
+  
+  // Private Vault
+  elements.vaultDropZone?.addEventListener('click', () => elements.vaultFileInput?.click());
+  elements.vaultFileInput?.addEventListener('change', handleVaultFileSelect);
+  initDropZone(elements.vaultDropZone, handleVaultFileDrop);
+  
+  elements.vaultTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      elements.vaultTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      loadVaultItems();
+    });
   });
 }
 
-/**
- * Простой парсер markdown (базовая поддержка)
- */
-function parseMarkdown(text) {
-  if (!text) return '';
+// ========== NAVIGATION ==========
+
+function loadSection(sectionName) {
+  currentSection = sectionName;
   
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-    .replace(/^\- (.+)$/gm, '<li>$1</li>')
-    .replace(/^\* (.+)$/gm, '<li>$1</li>')
-    .replace(/\n/g, '<br>');
+  elements.navItems.forEach(item => {
+    item.classList.toggle('active', item.dataset.section === sectionName);
+  });
   
-  if (html.includes('<li>')) {
-    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+  Object.entries(elements.sections).forEach(([name, section]) => {
+    if (section) section.style.display = name === sectionName ? 'block' : 'none';
+  });
+  
+  switch (sectionName) {
+    case 'memory-book': loadMemories(); break;
+    case 'bucket-list': loadWishes(); break;
+    case 'love-prompts': loadPrompts(); break;
+    case 'calendar': renderCalendar(); loadImportantDates(); break;
+    case 'playlist': loadPlaylist(); break;
+    case 'challenges': loadChallenges(); break;
+    case 'private-vault': loadVaultItems(); break;
   }
   
-  return html;
+  if (window.innerWidth <= 1024) elements.sidebar.classList.remove('active');
 }
 
-/**
- * Экранирование HTML
- */
+// ========== AUTH ==========
+
+async function setupAuthListener() {
+  const { data: { session } } = await supabase.auth.getSession();
+  currentUser = session?.user ?? null;
+  updateAuthUI();
+  
+  supabase.auth.onAuthStateChange((event, session) => {
+    currentUser = session?.user ?? null;
+    updateAuthUI();
+  });
+}
+
+function updateAuthUI() {
+  if (currentUser) {
+    elements.authBtn.textContent = '👤 ' + (currentUser.email?.split('@')[0] || 'Профиль');
+    elements.authLogoutBtn.style.display = 'block';
+    elements.authSubmitBtn.style.display = 'none';
+    elements.adminLink.style.display = 'inline-flex';
+  } else {
+    elements.authBtn.textContent = '🔐 Войти';
+    elements.authLogoutBtn.style.display = 'none';
+    elements.authSubmitBtn.style.display = 'block';
+    elements.adminLink.style.display = 'none';
+  }
+}
+
+async function handleAuth() {
+  const email = elements.authEmail.value.trim();
+  const password = elements.authPassword.value;
+  
+  if (!email || !password) {
+    showToast('Введите email и пароль', 'error');
+    return;
+  }
+  
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    
+    currentUser = data.user;
+    updateAuthUI();
+    closeModal('auth-modal');
+    showToast('Добро пожаловать! 💕', 'success');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+async function handleLogout() {
+  try {
+    await supabase.auth.signOut();
+    currentUser = null;
+    updateAuthUI();
+    showToast('Вы вышли из системы', 'info');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+}
+
+// ========== MODAL HELPERS ==========
+
+function openModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) modal.classList.add('active');
+}
+
+function closeModal(modalId) {
+  const modal = document.getElementById(modalId);
+  if (modal) {
+    modal.classList.remove('active');
+    uploadedImages = [];
+    [elements.memoryPreviewContainer, elements.wishPreviewContainer, elements.challengePreviewContainer]
+      .forEach(el => { if (el) el.innerHTML = ''; });
+  }
+}
+
+// ========== MEMORY BOOK ==========
+
+async function loadMemories() {
+  if (!elements.memoriesContainer) return;
+  
+  elements.memoriesContainer.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    let query = supabase.from('memories').select('*').order('memory_date', { ascending: false });
+    
+    const year = elements.memoryYearFilter?.value;
+    const month = elements.memoryMonthFilter?.value;
+    const tag = elements.memoryTagFilter?.value?.trim();
+    
+    if (year && year !== 'all') {
+      query = query.gte('memory_date', `${year}-01-01`).lte('memory_date', `${year}-12-31`);
+    }
+    
+    if (month && month !== 'all') {
+      const y = year !== 'all' ? year : new Date().getFullYear();
+      query = query.gte('memory_date', `${y}-${month.padStart(2, '0')}-01`)
+                   .lte('memory_date', `${y}-${month.padStart(2, '0')}-31`);
+    }
+    
+    if (tag) query = query.contains('tags', [tag.toLowerCase()]);
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    updateYearFilter(data);
+    
+    if (!data || data.length === 0) {
+      elements.memoriesContainer.innerHTML = `
+        <div class="empty-state"><div class="empty-state-icon">📖</div><p>Пока нет воспоминаний</p></div>`;
+      return;
+    }
+    
+    elements.memoriesContainer.innerHTML = data.map(createMemoryCard).join('');
+  } catch (error) {
+    console.error('Error loading memories:', error);
+    elements.memoriesContainer.innerHTML = '<div class="empty-state"><p style="color: var(--error);">Ошибка загрузки</p></div>';
+  }
+}
+
+function createMemoryCard(memory) {
+  const tags = memory.tags || [];
+  const images = memory.image_urls || [];
+  
+  let imageHtml = '';
+  if (images.length === 1) {
+    imageHtml = `<img src="${images[0]}" alt="${memory.title}" class="memory-image" onclick="openImageModal('${images[0]}')">`;
+  } else if (images.length > 1) {
+    imageHtml = `<div class="memory-images-grid">${images.slice(0, 4).map(img => `<img src="${img}" onclick="openImageModal('${img}')" />`).join('')}</div>`;
+  }
+  
+  return `
+    <div class="memory-card fade-in">
+      ${imageHtml}
+      <div class="memory-content">
+        <h3 class="memory-title">${escapeHtml(memory.title)}</h3>
+        <div class="memory-date">📅 ${formatDate(memory.memory_date, 'full', 'ru')}</div>
+        <div class="memory-text">${parseMarkdown(memory.content)}</div>
+        ${tags.length > 0 ? `<div class="memory-tags">${tags.map(tag => `<span class="memory-tag">#${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function updateYearFilter(memories) {
+  if (!elements.memoryYearFilter) return;
+  const years = [...new Set(memories.map(m => new Date(m.memory_date).getFullYear()))].sort((a, b) => b - a);
+  const current = elements.memoryYearFilter.value;
+  elements.memoryYearFilter.innerHTML = '<option value="all">Все годы</option>' + years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (years.includes(parseInt(current))) elements.memoryYearFilter.value = current;
+}
+
+function openMemoryModal() {
+  if (!currentUser) { showToast('Войдите чтобы добавлять воспоминания', 'warning'); openModal('auth-modal'); return; }
+  uploadedImages = [];
+  elements.memoryPreviewContainer.innerHTML = '';
+  document.getElementById('memory-modal-title').textContent = '📖 Добавить воспоминание';
+  elements.memoryTitle.value = '';
+  elements.memoryDate.value = new Date().toISOString().split('T')[0];
+  elements.memoryContent.value = '';
+  elements.memoryTags.value = '';
+  openModal('memory-modal');
+}
+
+function handleMemoryImageSelect(e) {
+  Array.from(e.target.files).forEach(file => previewImage(file, elements.memoryPreviewContainer));
+}
+
+function handleMemoryImageDrop(file) {
+  previewImage(file, elements.memoryPreviewContainer);
+}
+
+async function saveMemory() {
+  if (!currentUser) { showToast('Войдите чтобы сохранять', 'warning'); return; }
+  
+  const title = elements.memoryTitle.value.trim();
+  const content = elements.memoryContent.value.trim();
+  const memoryDate = elements.memoryDate.value;
+  
+  if (!title || !content || !memoryDate) { showToast('Заполните обязательные поля', 'error'); return; }
+  
+  const tags = elements.memoryTags.value.trim().split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+  
+  try {
+    let imageUrls = [];
+    for (const img of uploadedImages) {
+      const path = `memories/${generateUUID()}_${img.file.name}`;
+      imageUrls.push(await uploadToStorage('memories', img.file, path));
+    }
+    
+    const { error } = await supabase.from('memories').insert([{
+      title, content, memory_date: memoryDate, tags, image_urls: imageUrls, created_by: 'user'
+    }]);
+    
+    if (error) throw error;
+    
+    showToast('Воспоминание сохранено! 💕', 'success');
+    closeModal('memory-modal');
+    loadMemories();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== BUCKET LIST ==========
+
+async function loadWishes() {
+  if (!elements.wishesContainer) return;
+  elements.wishesContainer.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    let query = supabase.from('wishes').select('*').order('created_at', { ascending: false });
+    
+    const status = elements.bucketStatusFilter?.value;
+    const category = elements.bucketCategoryFilter?.value;
+    
+    if (status && status !== 'all') query = query.eq('status', status);
+    if (category && category !== 'all') query = query.eq('category', category);
+    
+    const { data, error } = await query;
+    if (error) throw error;
+    
+    updateBucketStats(data);
+    
+    if (!data || data.length === 0) {
+      elements.wishesContainer.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💫</div><p>Пока нет желаний</p></div>';
+      return;
+    }
+    
+    elements.wishesContainer.innerHTML = data.map(createWishCard).join('');
+  } catch (error) {
+    elements.wishesContainer.innerHTML = '<div class="empty-state"><p style="color: var(--error);">Ошибка</p></div>';
+  }
+}
+
+function updateBucketStats(wishes) {
+  if (!elements.bucketStats) return;
+  elements.bucketStats.planned.textContent = wishes.filter(w => w.status === 'planned').length;
+  elements.bucketStats.inProgress.textContent = wishes.filter(w => w.status === 'in_progress').length;
+  elements.bucketStats.done.textContent = wishes.filter(w => w.status === 'done').length;
+}
+
+function createWishCard(wish) {
+  const cat = wishCategories[wish.category] || wishCategories.other;
+  const stat = wishStatuses[wish.status] || wishStatuses.planned;
+  
+  return `
+    <div class="wish-card fade-in">
+      <div class="wish-header"><h3 class="wish-title">${escapeHtml(wish.title)}</h3><span class="wish-category" title="${cat.name}">${cat.icon}</span></div>
+      ${wish.description ? `<p class="wish-description">${escapeHtml(wish.description)}</p>` : ''}
+      ${wish.image_url ? `<img src="${wish.image_url}" class="wish-image">` : ''}
+      <div class="wish-meta">
+        <span class="wish-status ${wish.status}">${stat.icon} ${stat.name}</span>
+        <div class="wish-actions">
+          ${currentUser ? `<button class="btn btn-secondary btn-sm" onclick="editWish('${wish.id}')" title="Редактировать">✏️</button>` : ''}
+          ${currentUser ? `<button class="btn btn-danger btn-sm" onclick="deleteWish('${wish.id}')">🗑️</button>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openWishModal() {
+  if (!currentUser) { showToast('Войдите чтобы добавлять желания', 'warning'); openModal('auth-modal'); return; }
+  uploadedImages = [];
+  elements.wishPreviewContainer.innerHTML = '';
+  document.getElementById('wish-modal-title').textContent = '💫 Добавить желание';
+  document.getElementById('wish-id').value = '';
+  document.getElementById('wish-title').value = '';
+  document.getElementById('wish-description').value = '';
+  document.getElementById('wish-category').value = 'other';
+  document.getElementById('wish-status').value = 'planned';
+  openModal('wish-modal');
+}
+
+window.editWish = async function(wishId) {
+  if (!currentUser) { showToast('Войдите чтобы редактировать', 'warning'); openModal('auth-modal'); return; }
+  
+  try {
+    const { data, error } = await supabase.from('wishes').select('*').eq('id', wishId).single();
+    if (error) throw error;
+    
+    document.getElementById('wish-modal-title').textContent = '✏️ Редактировать желание';
+    document.getElementById('wish-id').value = data.id;
+    document.getElementById('wish-title').value = data.title;
+    document.getElementById('wish-description').value = data.description || '';
+    document.getElementById('wish-category').value = data.category || 'other';
+    document.getElementById('wish-status').value = data.status || 'planned';
+    
+    uploadedImages = [];
+    elements.wishPreviewContainer.innerHTML = '';
+    
+    // Show existing image
+    if (data.image_url) {
+      addExistingWishImageToPreview(data.image_url);
+    }
+    
+    openModal('wish-modal');
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+};
+
+function addExistingWishImageToPreview(url) {
+  const preview = elements.wishPreviewContainer;
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:relative;display:inline-block;';
+  
+  const img = document.createElement('img');
+  img.src = url;
+  img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border-color);';
+  
+  const btn = document.createElement('button');
+  btn.className = 'btn-remove-image';
+  btn.innerHTML = '✕';
+  btn.style.cssText = 'position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;background:rgba(220,38,38,0.9);color:white;border:none;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+  btn.onclick = () => {
+    wrapper.remove();
+    if (!uploadedImages.toRemove) uploadedImages.toRemove = [];
+    uploadedImages.toRemove.push(url);
+  };
+  
+  wrapper.appendChild(img);
+  wrapper.appendChild(btn);
+  preview.appendChild(wrapper);
+}
+
+function handleWishImageSelect(e) {
+  if (e.target.files[0]) previewImage(e.target.files[0], elements.wishPreviewContainer);
+}
+
+function handleWishImageDrop(file) {
+  previewImage(file, elements.wishPreviewContainer);
+}
+
+async function saveWish() {
+  if (!currentUser) { showToast('Войдите чтобы сохранять', 'warning'); return; }
+  const title = elements.wishTitle.value.trim();
+  if (!title) { showToast('Введите название желания', 'error'); return; }
+  
+  const wishId = document.getElementById('wish-id').value;
+  
+  try {
+    let imageUrl = null;
+    
+    // Upload new image
+    if (uploadedImages.length > 0 && uploadedImages[0].file) {
+      const img = uploadedImages[0];
+      const safeFileName = img.file.name
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .toLowerCase();
+      
+      const path = `wishes/${generateUUID()}_${safeFileName}`;
+      imageUrl = await uploadToStorage('wishes', img.file, path);
+    }
+    
+    // Get existing image if not removed
+    if (wishId && !imageUrl) {
+      const { data: existing } = await supabase.from('wishes').select('image_url').eq('id', wishId).single();
+      if (existing?.image_url) {
+        const toRemove = uploadedImages.toRemove || [];
+        if (!toRemove.includes(existing.image_url)) {
+          imageUrl = existing.image_url;
+        }
+      }
+    }
+    
+    const wishData = {
+      title,
+      description: document.getElementById('wish-description').value.trim() || null,
+      category: document.getElementById('wish-category').value,
+      status: document.getElementById('wish-status').value,
+      image_url: imageUrl,
+      updated_at: new Date().toISOString()
+    };
+    
+    let error;
+    if (wishId) {
+      ({ error } = await supabase.from('wishes').update(wishData).eq('id', wishId));
+    } else {
+      wishData.created_by = 'user';
+      wishData.created_at = new Date().toISOString();
+      ({ error } = await supabase.from('wishes').insert([wishData]));
+    }
+    
+    if (error) throw error;
+    
+    showToast('Желание сохранено! 💫', 'success');
+    closeModal('wish-modal');
+    loadWishes();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+async function deleteWish(wishId) {
+  if (!currentUser || !confirm('Удалить?')) return;
+  try {
+    await supabase.from('wishes').delete().eq('id', wishId);
+    showToast('Удалено', 'success');
+    loadWishes();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== LOVE PROMPTS ==========
+
+async function loadPrompts() {
+  if (!elements.promptsContainer) return;
+  elements.promptsContainer.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    const { data, error } = await supabase.from('prompts').select('*, responses:prompt_responses(*)').order('created_at', { ascending: false });
+    if (error) throw error;
+    
+    if (!data || data.length === 0) {
+      elements.promptsContainer.innerHTML = '<div class="empty-state"><div class="empty-state-icon">💭</div><p>Пока нет вопросов</p></div>';
+      return;
+    }
+    
+    elements.promptsContainer.innerHTML = data.map(createPromptCard).join('');
+  } catch (error) {
+    elements.promptsContainer.innerHTML = '<div class="empty-state"><p style="color: var(--error);">Ошибка</p></div>';
+  }
+}
+
+function createPromptCard(prompt) {
+  const responses = prompt.responses || [];
+  const targets = { him: 'Для него', her: 'Для неё', both: 'Общий' };
+  
+  return `
+    <div class="prompt-card fade-in">
+      <div class="prompt-question">${escapeHtml(prompt.question)}</div>
+      <div class="prompt-responses">
+        ${responses.map(r => `<div class="prompt-response prompt-response-${r.answered_by}"><div class="response-text">${escapeHtml(r.answer)}</div><div class="response-date">${formatDate(r.answered_at, 'datetime', 'ru')}</div></div>`).join('')}
+        ${responses.length === 0 ? '<p style="color: var(--text-muted);">Нет ответов</p>' : ''}
+      </div>
+      <div class="prompt-meta">
+        <span class="prompt-target">${targets[prompt.target] || 'Общий'}</span>
+        ${currentUser && !responses.find(r => r.answered_by === 'user') ? `<button class="btn btn-primary btn-sm" onclick="answerPrompt('${prompt.id}')">💬 Ответить</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function answerPrompt(promptId) {
+  if (!currentUser) { showToast('Войдите чтобы отвечать', 'warning'); return; }
+  const answer = prompt('Ваш ответ:');
+  if (!answer?.trim()) return;
+  try {
+    await supabase.from('prompt_responses').insert([{ prompt_id: promptId, answer: answer.trim(), answered_by: 'user' }]);
+    showToast('Ответ сохранён! 💕', 'success');
+    loadPrompts();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+async function savePrompt() {
+  if (!currentUser) { showToast('Войдите чтобы добавлять', 'warning'); return; }
+  const question = elements.promptQuestion.value.trim();
+  if (!question) { showToast('Введите вопрос', 'error'); return; }
+  try {
+    await supabase.from('prompts').insert([{ question, target: elements.promptTarget.value, is_custom: true, created_by: 'user' }]);
+    showToast('Вопрос добавлен! 💭', 'success');
+    closeModal('prompt-modal');
+    loadPrompts();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== CALENDAR ==========
+
+function renderCalendar() {
+  if (!elements.calendarGrid) return;
+  const year = calendarCurrentDate.getFullYear();
+  const month = calendarCurrentDate.getMonth();
+  const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  
+  elements.calendarMonthYear.textContent = `${monthNames[month]} ${year}`;
+  
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const daysInPrev = new Date(year, month, 0).getDate();
+  const startIndex = firstDay === 0 ? 6 : firstDay - 1;
+  
+  let html = dayNames.map(d => `<div class="calendar-day-header">${d}</div>`).join('');
+  
+  for (let i = startIndex - 1; i >= 0; i--) html += `<div class="calendar-day other-month"><span class="calendar-day-number">${daysInPrev - i}</span></div>`;
+  
+  const today = new Date();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d);
+    const isToday = date.toDateString() === today.toDateString();
+    const dateStr = date.toISOString().split('T')[0];
+    html += `<div class="calendar-day ${isToday ? 'today' : ''}" data-date="${dateStr}" title="Нажмите чтобы добавить событие"><span class="calendar-day-number">${d}</span><div class="calendar-events" id="events-${dateStr}"></div></div>`;
+  }
+  
+  const remaining = Math.ceil((daysInMonth + startIndex) / 7) * 7 - (startIndex + daysInMonth);
+  for (let i = 1; i <= remaining; i++) html += `<div class="calendar-day other-month"><span class="calendar-day-number">${i}</span></div>`;
+  
+  elements.calendarGrid.innerHTML = html;
+}
+
+function changeMonth(delta) {
+  calendarCurrentDate.setMonth(calendarCurrentDate.getMonth() + delta);
+  renderCalendar();
+  loadImportantDates();
+}
+
+async function loadImportantDates() {
+  if (!elements.upcomingEvents) return;
+  try {
+    const { data, error } = await supabase.from('important_dates').select('*').gte('event_date', new Date().toISOString().split('T')[0]).order('event_date', { ascending: true }).limit(5);
+    if (error) throw error;
+    
+    if (!data?.length) {
+      elements.upcomingEvents.innerHTML = '<p class="empty-state">Нет предстоящих событий</p>';
+      return;
+    }
+    
+    elements.upcomingEvents.innerHTML = data.map(e => `
+      <div class="card" style="padding: 15px; margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div><strong style="color: var(--accent-secondary);">${escapeHtml(e.title)}</strong><div style="color: var(--text-muted); font-size: 0.85rem;">${formatDate(e.event_date, 'DMY', 'ru')}</div></div>
+          ${currentUser ? `<button class="btn btn-secondary btn-sm" onclick="editEvent('${e.id}')">✏️</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+    
+    data.forEach(e => {
+      const day = document.querySelector(`.calendar-day[data-date="${e.event_date}"]`);
+      if (day && !day.querySelector('.calendar-event-indicator')) {
+        day.innerHTML += '<div class="calendar-event-indicator"></div>';
+        day.classList.add('has-event');
+      }
+    });
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+function openEventModal(selectedDate = null) {
+  if (!currentUser) { showToast('Войдите чтобы добавлять', 'warning'); openModal('auth-modal'); return; }
+  
+  const dateToUse = selectedDate || new Date().toISOString().split('T')[0];
+  const isToday = dateToUse === new Date().toISOString().split('T')[0];
+  
+  document.getElementById('event-modal-title').textContent = isToday 
+    ? '📅 Событие сегодня' 
+    : `📅 Событие ${formatDate(dateToUse, 'DMY', 'ru')}`;
+  
+  elements.eventTitle.value = '';
+  elements.eventDate.value = dateToUse;
+  elements.eventDescription.value = '';
+  elements.eventGifts.value = '';
+  elements.eventPlans.value = '';
+  elements.eventReminder.value = 3;
+  openModal('event-modal');
+}
+
+async function saveEvent() {
+  if (!currentUser) { showToast('Войдите чтобы сохранять', 'warning'); return; }
+  const title = elements.eventTitle.value.trim();
+  const date = elements.eventDate.value;
+  if (!title || !date) { showToast('Заполните название и дату', 'error'); return; }
+  
+  const gifts = elements.eventGifts.value.trim().split(',').map(g => g.trim()).filter(g => g);
+  
+  try {
+    await supabase.from('important_dates').insert([{
+      title, event_date: date, description: elements.eventDescription.value.trim() || null,
+      gift_ideas: gifts, plans: elements.eventPlans.value.trim() || null,
+      reminder_days_before: parseInt(elements.eventReminder.value) || 3, created_by: 'user'
+    }]);
+    showToast('Событие добавлено! 📅', 'success');
+    closeModal('event-modal');
+    renderCalendar();
+    loadImportantDates();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== PLAYLIST ==========
+
+async function loadPlaylist() {
+  if (!elements.playlistContainer) return;
+  elements.playlistContainer.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    const { data, error } = await supabase.from('playlist').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    
+    if (!data?.length) {
+      elements.playlistContainer.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎵</div><p>Пока нет треков</p></div>';
+      return;
+    }
+    
+    elements.playlistContainer.innerHTML = data.map(createSongCard).join('');
+  } catch (error) {
+    elements.playlistContainer.innerHTML = '<div class="empty-state"><p style="color: var(--error);">Ошибка</p></div>';
+  }
+}
+
+function createSongCard(song) {
+  const embedUrl = getYouTubeEmbedUrl(song.youtube_url);
+  const thumb = `https://img.youtube.com/vi/${song.youtube_id}/mqdefault.jpg`;
+  
+  return `
+    <div class="song-card fade-in">
+      <div class="song-thumbnail"><img src="${thumb}"></div>
+      <div class="song-info">
+        <div class="song-title">${escapeHtml(song.title || 'Без названия')}</div>
+        <div class="song-added">Добавлено ${formatDate(song.created_at, 'relative', 'ru')}</div>
+      </div>
+      <div class="song-actions">
+        <button class="btn btn-primary btn-sm" onclick="playSong('${embedUrl}')">▶️</button>
+        ${currentUser ? `<button class="btn btn-danger btn-sm" onclick="deleteSong('${song.id}')">🗑️</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function playSong(embedUrl) {
+  if (!embedUrl) return;
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `<div class="modal modal-large" style="background: #000;"><button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button><div style="padding-top: 56.25%; position: relative;"><iframe src="${embedUrl}?autoplay=1" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe></div></div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+async function saveSong() {
+  if (!currentUser) { showToast('Войдите чтобы добавлять', 'warning'); return; }
+  const url = elements.songUrl.value.trim();
+  const videoId = extractYouTubeId(url);
+  if (!videoId) { showToast('Неверная YouTube ссылка', 'error'); return; }
+  
+  try {
+    await supabase.from('playlist').insert([{ youtube_url: url, youtube_id: videoId, title: elements.songTitle.value.trim() || null, added_by: 'user' }]);
+    showToast('Трек добавлен! 🎵', 'success');
+    closeModal('song-modal');
+    loadPlaylist();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+async function deleteSong(songId) {
+  if (!currentUser || !confirm('Удалить?')) return;
+  try {
+    await supabase.from('playlist').delete().eq('id', songId);
+    showToast('Удалено', 'success');
+    loadPlaylist();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== CHALLENGES ==========
+
+async function loadChallenges() {
+  if (!elements.challengesContainer) return;
+  elements.challengesContainer.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    const { data, error } = await supabase.from('challenges').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    
+    if (!data?.length) {
+      elements.challengesContainer.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎯</div><p>Пока нет квестов</p></div>';
+      return;
+    }
+    
+    elements.challengesContainer.innerHTML = data.map(createChallengeCard).join('');
+  } catch (error) {
+    elements.challengesContainer.innerHTML = '<div class="empty-state"><p style="color: var(--error);">Ошибка</p></div>';
+  }
+}
+
+function createChallengeCard(c) {
+  const labels = { pending: 'Ожидает', in_progress: 'В процессе', completed: 'Выполнен' };
+  return `
+    <div class="challenge-card fade-in">
+      <div class="challenge-header"><h3 class="challenge-title">${escapeHtml(c.title)}</h3><span class="challenge-status ${c.status}">${labels[c.status]}</span></div>
+      <p class="challenge-description">${escapeHtml(c.description)}</p>
+      ${c.proof_image_url ? `<div class="challenge-proof"><img src="${c.proof_image_url}"></div>` : ''}
+      <div class="challenge-footer">
+        ${c.due_date ? `<span class="challenge-due">📅 До: ${formatDate(c.due_date, 'DMY', 'ru')}</span>` : ''}
+        ${currentUser && c.status !== 'completed' ? `<button class="btn btn-primary btn-sm" onclick="updateChallengeStatus('${c.id}', '${c.status}')">${c.status === 'pending' ? '▶️ Начать' : '✓ Завершить'}</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function openChallengeModal() {
+  if (!currentUser) { showToast('Войдите чтобы добавлять', 'warning'); openModal('auth-modal'); return; }
+  uploadedImages = [];
+  elements.challengePreviewContainer.innerHTML = '';
+  document.getElementById('challenge-modal-title').textContent = '🎯 Добавить квест';
+  elements.challengeTitle.value = '';
+  elements.challengeDescription.value = '';
+  elements.challengeDueDate.value = '';
+  openModal('challenge-modal');
+}
+
+function handleChallengeImageSelect(e) {
+  if (e.target.files[0]) previewImage(e.target.files[0], elements.challengePreviewContainer);
+}
+
+function handleChallengeImageDrop(file) {
+  previewImage(file, elements.challengePreviewContainer);
+}
+
+async function saveChallenge() {
+  if (!currentUser) { showToast('Войдите чтобы сохранять', 'warning'); return; }
+  const title = elements.challengeTitle.value.trim();
+  const desc = elements.challengeDescription.value.trim();
+  if (!title || !desc) { showToast('Заполните поля', 'error'); return; }
+  
+  try {
+    let proofUrl = null;
+    if (uploadedImages.length > 0) {
+      const path = `challenges/${generateUUID()}_${uploadedImages[0].file.name}`;
+      proofUrl = await uploadToStorage('challenges', uploadedImages[0].file, path);
+    }
+    
+    await supabase.from('challenges').insert([{
+      title, description: desc, due_date: elements.challengeDueDate.value || null,
+      proof_image_url: proofUrl, status: 'pending', created_by: 'user'
+    }]);
+    
+    showToast('Квест добавлен! 🎯', 'success');
+    closeModal('challenge-modal');
+    loadChallenges();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+async function updateChallengeStatus(id, current) {
+  if (!currentUser) { showToast('Войдите чтобы изменять', 'warning'); return; }
+  const newStatus = current === 'pending' ? 'in_progress' : 'completed';
+  try {
+    await supabase.from('challenges').update({ status: newStatus, completed_at: newStatus === 'completed' ? new Date().toISOString() : null }).eq('id', id);
+    showToast('Статус обновлён!', 'success');
+    loadChallenges();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+// ========== PRIVATE VAULT ==========
+
+async function loadVaultItems() {
+  if (!elements.vaultItems) return;
+  elements.vaultItems.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  
+  try {
+    const { data, error } = await supabase.storage.from('private_vault').list('', { limit: 100 });
+    if (error) throw error;
+    
+    if (!data?.length) {
+      elements.vaultItems.innerHTML = '<p class="empty-state">Пока пусто</p>';
+      return;
+    }
+    
+    const activeTab = document.querySelector('.vault-tab.active')?.dataset.tab || 'photos';
+    const isPhotos = activeTab === 'photos';
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a'];
+    
+    const filtered = data.filter(item => {
+      const ext = item.name.split('.').pop().toLowerCase();
+      return isPhotos ? imageExts.includes(ext) : audioExts.includes(ext);
+    });
+    
+    if (!filtered.length) {
+      elements.vaultItems.innerHTML = `<p class="empty-state">${isPhotos ? 'Нет фото' : 'Нет аудио'}</p>`;
+      return;
+    }
+    
+    elements.vaultItems.innerHTML = filtered.map(item => {
+      const { data: { publicUrl } } = supabase.storage.from('private_vault').getPublicUrl(item.name);
+      const ext = item.name.split('.').pop().toLowerCase();
+      const isImage = imageExts.includes(ext);
+      
+      if (isImage) {
+        return `<div class="vault-item"><img src="${publicUrl}"><div class="vault-item-actions"><button onclick="downloadFile('${publicUrl}', '${item.name}')">⬇️</button><button onclick="deleteVaultItem('${item.name}')">🗑️</button></div></div>`;
+      }
+      return `<div class="vault-item" style="display:flex;align-items:center;justify-content:center;background:var(--bg-input);"><audio controls src="${publicUrl}" style="width:100%"></audio><div class="vault-item-actions"><button onclick="downloadFile('${publicUrl}', '${item.name}')">⬇️</button><button onclick="deleteVaultItem('${item.name}')">🗑️</button></div></div>`;
+    }).join('');
+  } catch (error) {
+    elements.vaultItems.innerHTML = '<p class="empty-state" style="color: var(--error);">Ошибка</p>';
+  }
+}
+
+function handleVaultFileSelect(e) {
+  Array.from(e.target.files).forEach(uploadVaultFile);
+}
+
+function handleVaultFileDrop(file) {
+  uploadVaultFile(file);
+}
+
+async function uploadVaultFile(file) {
+  if (!currentUser) { showToast('Войдите чтобы загружать', 'warning'); return; }
+  try {
+    await supabase.storage.from('private_vault').upload(`vault/${generateUUID()}_${file.name}`, file);
+    showToast('Файл загружен! 🔐', 'success');
+    loadVaultItems();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+async function deleteVaultItem(name) {
+  if (!currentUser || !confirm('Удалить?')) return;
+  try {
+    await supabase.storage.from('private_vault').remove([name]);
+    showToast('Удалено', 'success');
+    loadVaultItems();
+  } catch (error) {
+    showToast('Ошибка: ' + error.message, 'error');
+  }
+}
+
+function downloadFile(url, name) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+}
+
+// ========== THEME FUNCTIONS ==========
+
+function updateThemeSelection(themeName) {
+  const currentTheme = localStorage.getItem('love_letters_theme') || 'classic';
+  document.body.setAttribute('data-theme', currentTheme);
+  updateThemeSelection(currentTheme);
+}
+
+// ========== UTILS ==========
+
+function previewImage(file, container) {
+  if (!file.type.startsWith('image/')) { showToast('Выберите изображение', 'error'); return; }
+  
+  const id = generateUUID();
+  uploadedImages.push({ file, id });
+  
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:relative;display:inline-block;';
+    
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    img.style.cssText = 'width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border-color);';
+    
+    const btn = document.createElement('button');
+    btn.className = 'btn-remove-image';
+    btn.innerHTML = '✕';
+    btn.onclick = () => {
+      uploadedImages = uploadedImages.filter(i => i.id !== id);
+      wrapper.remove();
+    };
+    
+    wrapper.appendChild(img);
+    wrapper.appendChild(btn);
+    container.appendChild(wrapper);
+  };
+  reader.readAsDataURL(file);
+}
+
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
 }
 
-// ========== Authentication ==========
-
-/**
- * Вход в систему
- */
-async function handleLogin() {
-  const email = loginEmail.value.trim();
-  const password = loginPassword.value.trim();
-  
-  if (!email || !password) {
-    showToast('Введите email и пароль!', 'warning');
-    return;
-  }
-  
-  loginSubmitBtn.disabled = true;
-  loginSubmitBtn.textContent = 'Вход...';
-  
-  try {
-    const result = await signInWithEmail(email, password);
-    
-    console.log('🔐 Результат входа:', result);
-    
-    // Supabase возвращает { user, session } или только { session }
-    const user = result.user || result.session?.user;
-    
-    if (user) {
-      showToast(`Добро пожаловать, ${user.email}!`, 'success');
-      loginModal.classList.remove('active');
-    } else {
-      showToast('Вход выполнен', 'success');
-      loginModal.classList.remove('active');
-    }
-  } catch (error) {
-    console.error('Ошибка входа:', error);
-    showToast('Ошибка входа: ' + error.message, 'error');
-  } finally {
-    loginSubmitBtn.disabled = false;
-    loginSubmitBtn.textContent = 'Войти';
-  }
-}
-
-/**
- * Выход из системы
- */
-async function handleLogout() {
-  try {
-    await signOut();
-    showToast('Вы вышли из системы', 'success');
-  } catch (error) {
-    console.error('Ошибка выхода:', error);
-    showToast('Ошибка выхода', 'error');
-  }
-}
-
-/**
- * Обновление UI в зависимости от авторизации
- */
-function updateAuthUI(user) {
-  if (user) {
-    // Пользователь авторизован
-    isUserLoggedIn = true;
-    loginBtn.style.display = 'none';
-    logoutBtn.style.display = 'inline-flex';
-    console.log('✅ Пользователь авторизован:', user.email);
-  } else {
-    // Пользователь не авторизован
-    isUserLoggedIn = false;
-    loginBtn.style.display = 'inline-flex';
-    logoutBtn.style.display = 'none';
-    console.log('⚠️ Пользователь не авторизован');
-  }
-}
-
-/**
- * Проверка состояния авторизации
- */
-onAuthStateChanged(async (user) => {
-  console.log('🔍 Состояние авторизации:', user ? user.email : 'гость');
-  updateAuthUI(user);
-  checkAdminAuth(); // Проверяем нужно ли показать кнопку "Админка"
-});
-
-// ========== Notes Loading ==========
-
-/**
- * Эмодзи для настроения
- */
-function getMoodEmoji(mood) {
-  const emojis = {
-    excellent: '🤩',
-    good: '😊',
-    neutral: '😐',
-    sad: '😢',
-    angry: '😤'
+function debounce(func, wait) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
   };
-  return emojis[mood] || '😐';
 }
 
-/**
- * Текст для настроения
- */
-function getMoodText(mood) {
-  const texts = {
-    excellent: 'Отлично',
-    good: 'Хорошо',
-    neutral: 'Нормально',
-    sad: 'Грустно',
-    angry: 'Злюсь'
-  };
-  return texts[mood] || 'Неизвестно';
-}
+// ========== GLOBAL HANDLERS ==========
 
-// ========== Notes (Записки) ==========
+window.openImageModal = src => {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay active';
+  modal.innerHTML = `<div class="modal" style="max-width:90%;padding:20px;"><button class="modal-close" style="position:absolute;top:10px;right:10px;" onclick="this.closest('.modal-overlay').remove()">×</button><img src="${src}" style="max-width:100%;max-height:80vh;border-radius:var(--radius-md);"></div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+};
 
-/**
- * Подписка на записки в реальном времени
- */
-function subscribeToNotes() {
-  // Начальная загрузка
-  loadNotes();
-  
-  // Очищаем старую подписку если есть
-  if (notesChannel) {
-    supabase.removeChannel(notesChannel);
-  }
-  
-  // Realtime подписка с debouncing
-  const debouncedLoad = debounce(() => {
-    cache.notes = null;
-    loadNotes();
-  }, 500);
-  
-  notesChannel = supabase
-    .channel('notes')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'notes' },
-      debouncedLoad
-    )
-    .subscribe();
-}
+window.deleteWish = deleteWish;
+window.editWish = editWish;
+window.answerPrompt = answerPrompt;
+window.playSong = playSong;
+window.deleteSong = deleteSong;
+window.updateChallengeStatus = updateChallengeStatus;
+window.deleteVaultItem = deleteVaultItem;
+window.downloadFile = downloadFile;
+window.openModal = openModal;
+window.closeModal = closeModal;
+window.editEvent = id => { showToast('Редактирование событий в разработке', 'info'); };
 
-/**
- * Загрузка записок
- */
-async function loadNotes() {
-  // Проверка кэша
-  if (isCacheValid('notes')) {
-    renderNotes(cache.notes);
-    return;
-  }
-  
-  try {
-    const { data, error } = await supabase
-      .from('notes')
-      .select('id, title, content, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    
-    if (error) throw error;
-    
-    // Обновление кэша
-    cache.notes = data;
-    cacheTimestamps.notes = Date.now();
-    
-    if (!data || data.length === 0) {
-      notesContainer.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-state-icon">📭</div>
-          <p>Пока нет записок</p>
-          <p style="font-size: 0.9rem; margin-top: 10px;">Загляни позже!</p>
-        </div>
-      `;
-      return;
-    }
-    
-    // Сохраняем ID последней записки для отзывов
-    latestNoteId = data[0].id;
-    
-    renderNotes(data);
-  } catch (error) {
-    console.error('Ошибка при загрузке записок:', error);
-    notesContainer.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">❌</div>
-        <p>Ошибка загрузки записок</p>
-        <p style="font-size: 0.9rem; margin-top: 10px;">Проверьте подключение к интернету</p>
-      </div>
-    `;
-  }
-}
+// ========== START ==========
 
-/**
- * Отрисовка записок
- */
-function renderNotes(notes) {
-  notesContainer.innerHTML = notes.map((note, index) => `
-    <div class="card fade-in" style="animation-delay: ${index * 0.1}s">
-      <div class="card-header">
-        <h3 class="card-title">${escapeHtml(note.title || 'Без названия')}</h3>
-        <span class="card-date">${formatDate(note.created_at)}</span>
-      </div>
-      <div class="card-content">${parseMarkdown(note.content || '')}</div>
-    </div>
-  `).join('');
-}
-
-// ========== Mood (Настроение) ==========
-
-/**
- * Инициализация селектора настроения
- */
-function initMoodSelector() {
-  const moodBtns = moodSelector.querySelectorAll('.mood-btn');
-  
-  moodBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Сброс предыдущего выбора
-      moodBtns.forEach(b => b.classList.remove('selected'));
-      // Выбор текущего
-      btn.classList.add('selected');
-      selectedMood = btn.dataset.mood;
-    });
-  });
-}
-    
-/**
- * Отправка настроения
- */
-async function submitMood() {
-  console.log('🎭 Отправка настроения...');
-  console.log('Выбранное настроение:', selectedMood);
-  
-  if (!selectedMood) {
-    console.warn('Настроение не выбрано');
-    showToast('Выберите настроение!', 'warning');
-    return;
-  }
-  
-  const comment = moodComment.value.trim();
-  console.log('Комментарий:', comment);
-  
-  // Блокировка кнопки на время отправки
-  submitMoodBtn.disabled = true;
-  submitMoodBtn.textContent = 'Отправка...';
-  
-  try {
-    console.log('📤 Отправка в Supabase...');
-    
-    const moodData = {
-      mood: selectedMood,
-      mood_emoji: getMoodEmoji(selectedMood),
-      mood_text: getMoodText(selectedMood),
-      comment: comment
-      // created_at установится автоматически (DEFAULT NOW())
-    };
-    
-    console.log('Данные:', moodData);
-    
-    const { data, error } = await supabase.from('moods').insert(moodData).select();
-    
-    console.log('Ответ Supabase:', { data, error });
-    
-    if (error) {
-      console.error('Ошибка от Supabase:', error);
-      throw error;
-    }
-    
-    console.log('✅ Настроение сохранено!');
-    showToast('Настроение сохранено! 💕', 'success');
-    moodComment.value = '';
-    selectedMood = null;
-    moodSelector.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('selected'));
-    
-    // Сброс кэша для немедленного обновления
-    cache.moods = null;
-    loadMoods();
-  } catch (error) {
-    console.error('❌ Ошибка отправки настроения:', error);
-    showToast(`Ошибка: ${error.message}`, 'error');
-  } finally {
-    submitMoodBtn.disabled = false;
-    submitMoodBtn.textContent = 'Отправить 💕';
-  }
-}
-
-/**
- * Подписка на настроения
- */
-function subscribeToMoods() {
-  // Начальная загрузка
-  loadMoods(1);
-  
-  // Очищаем старую подписку если есть
-  if (moodsChannel) {
-    supabase.removeChannel(moodsChannel);
-  }
-  
-  // Realtime подписка с debouncing
-  const debouncedLoad = debounce(() => {
-    loadMoods(pagination.moods.page);
-  }, 500);
-  
-  moodsChannel = supabase
-    .channel('moods')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'moods' },
-      debouncedLoad
-    )
-    .subscribe();
-}
-
-/**
- * Подписка на отзывы
- */
-function subscribeToReviews() {
-  // Начальная загрузка
-  loadReviews(1);
-  
-  // Очищаем старую подписку если есть
-  if (reviewsChannel) {
-    supabase.removeChannel(reviewsChannel);
-  }
-  
-  // Realtime подписка с debouncing
-  const debouncedLoad = debounce(() => {
-    loadReviews(pagination.reviews.page);
-  }, 500);
-  
-  reviewsChannel = supabase
-    .channel('reviews')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'reviews' },
-      debouncedLoad
-    )
-    .subscribe();
-}
-
-/**
- * Подписка на желания
- */
-function subscribeToWishes() {
-  // Начальная загрузка
-  loadWishes(1);
-  
-  // Очищаем старую подписку если есть
-  if (wishesChannel) {
-    supabase.removeChannel(wishesChannel);
-  }
-  
-  // Realtime подписка с debouncing
-  const debouncedLoad = debounce(() => {
-    loadWishes(pagination.wishes.page);
-  }, 500);
-  
-  wishesChannel = supabase
-    .channel('wishes')
-    .on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'wishes' },
-      debouncedLoad
-    )
-    .subscribe();
-}
-
-/**
- * Загрузка настроений
- */
-async function loadMoods(page = 1) {
-  pagination.moods.page = page;
-  
-  try {
-    const from = (page - 1) * pagination.moods.perPage;
-    const to = from + pagination.moods.perPage - 1;
-    
-    // Загружаем страницу с направлением user_to_admin
-    const { data, error } = await supabase
-      .from('moods')
-      .select('id, mood_emoji, mood_text, comment, created_at, direction', { count: 'exact' })
-      .eq('direction', 'user_to_admin')
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (error) {
-      console.error('❌ Ошибка Supabase:', error);
-      throw error;
-    }
-    
-    // Получаем count из ответа
-    const count = data ? data.length : 0;
-    const total = count > 0 ? count : 0;
-    
-    if (!data || data.length === 0) {
-      moodHistory.innerHTML = '<p class="empty-state">Пока нет записей о настроении</p>';
-      renderPagination('moods', 0);
-      return;
-    }
-    
-    renderMoodsList(data);
-    renderPagination('moods', Math.ceil(total / pagination.moods.perPage));
-  } catch (error) {
-    console.error('Ошибка загрузки настроений:', error);
-    moodHistory.innerHTML = '<p class="empty-state">Ошибка загрузки</p>';
-    renderPagination('moods', 0);
-  }
-}
-
-/**
- * Отрисовка пагинации
- */
-function renderPagination(type, totalPages) {
-  const container = document.getElementById(`${type}-pagination`);
-  if (!container) return;
-  
-  const currentPage = pagination[type].page;
-  
-  if (totalPages <= 1) {
-    container.innerHTML = '';
-    return;
-  }
-  
-  container.innerHTML = `
-    <div class="pagination">
-      <button 
-        class="pagination-btn ${currentPage === 1 ? 'disabled' : ''}" 
-        onclick="prevPage('${type}')"
-        ${currentPage === 1 ? 'disabled' : ''}
-      >
-        ← Назад
-      </button>
-      <span class="pagination-info">
-        Страница ${currentPage} из ${totalPages}
-      </span>
-      <button 
-        class="pagination-btn ${currentPage === totalPages ? 'disabled' : ''}"
-        onclick="nextPage('${type}')"
-        ${currentPage === totalPages ? 'disabled' : ''}
-      >
-        Вперёд →
-      </button>
-    </div>
-  `;
-}
-
-/**
- * Предыдущая страница
- */
-function prevPage(type) {
-  if (pagination[type].page > 1) {
-    pagination[type].page--;
-    if (type === 'moods') loadMoods(pagination[type].page);
-    if (type === 'reviews') loadReviews(pagination[type].page);
-    if (type === 'wishes') loadWishes(pagination[type].page);
-  }
-}
-
-/**
- * Следующая страница
- */
-function nextPage(type) {
-  const totalPages = Math.ceil(pagination[type].total / pagination[type].perPage);
-  if (pagination[type].page < totalPages) {
-    pagination[type].page++;
-    if (type === 'moods') loadMoods(pagination[type].page);
-    if (type === 'reviews') loadReviews(pagination[type].page);
-    if (type === 'wishes') loadWishes(pagination[type].page);
-  }
-}
-
-// Делаем функции глобальными
-window.prevPage = prevPage;
-window.nextPage = nextPage;
-/**
- * Отрисовка настроений
- */
-function renderMoodsList(moods) {
-  moodHistory.innerHTML = moods.map(mood => `
-    <div class="review-item">
-      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-        <span style="font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: ${mood.direction === 'admin_to_user' ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'linear-gradient(135deg, var(--success), #22c55e)'}; color: white;">
-          ${mood.direction === 'admin_to_user' ? '🎁 От Админа' : '📤 Вы'}
-        </span>
-      </div>
-      <div style="font-size: 1.5rem; margin-bottom: 5px;">${mood.mood_emoji}</div>
-      <div style="color: var(--accent-secondary); font-weight: 500;">${mood.mood_text}</div>
-      ${mood.comment ? `<div class="review-text">${escapeHtml(mood.comment)}</div>` : ''}
-      <div class="review-date">${formatDate(mood.created_at)}</div>
-    </div>
-  `).join('');
-}
-
-// ========== Reviews (Отзывы) ==========
-
-/**
- * Инициализация звёздного рейтинга
- */
-function initStarRating() {
-  const stars = starRating.querySelectorAll('span');
-  
-  stars.forEach(star => {
-    star.addEventListener('click', () => {
-      const rating = parseInt(star.dataset.rating);
-      selectedRating = rating;
-      
-      // Обновление отображения звёзд
-      stars.forEach((s, index) => {
-        if (index < rating) {
-          s.classList.add('active');
-          s.textContent = '★';
-        } else {
-          s.classList.remove('active');
-          s.textContent = '☆';
-        }
-      });
-    });
-    
-    // Hover эффект
-    star.addEventListener('mouseenter', () => {
-      const rating = parseInt(star.dataset.rating);
-      stars.forEach((s, index) => {
-        s.textContent = index < rating ? '★' : '☆';
-      });
-    });
-    
-    star.addEventListener('mouseleave', () => {
-      stars.forEach((s, index) => {
-        s.textContent = index < selectedRating ? '★' : '☆';
-      });
-    });
-  });
-}
-
-/**
- * Отправка отзыва о дне
- */
-async function submitReview() {
-  if (selectedRating === 0) {
-    showToast('Поставьте оценку дня!', 'warning');
-    return;
-  }
-  
-  const text = reviewText.value.trim();
-  
-  if (!text) {
-    showToast('Напишите хоть пару слов о дне!', 'warning');
-    return;
-  }
-  
-  // Блокировка кнопки
-  submitReviewBtn.disabled = true;
-  submitReviewBtn.textContent = 'Отправка...';
-  
-  try {
-    const { error } = await supabase.from('reviews').insert({
-      rating: selectedRating,
-      text: text,
-      direction: 'user_to_admin'  // Получатель → Админ
-      // note_id больше не нужен
-      // created_at установится автоматически
-    });
-    
-    if (error) throw error;
-    
-    showToast('Отзыв отправлен! 💌', 'success');
-    reviewText.value = '';
-    selectedRating = 0;
-    starRating.querySelectorAll('span').forEach(s => {
-      s.classList.remove('active');
-      s.textContent = '☆';
-    });
-    
-    // Сброс кэша
-    cache.reviews = null;
-    loadReviews();
-  } catch (error) {
-    console.error('Ошибка отправки отзыва:', error);
-    showToast('Ошибка отправки отзыва', 'error');
-  } finally {
-    submitReviewBtn.disabled = false;
-    submitReviewBtn.textContent = 'Отправить отзыв 💌';
-  }
-}
-
-/**
- * Загрузка отзывов
- */
-async function loadReviews(page = 1) {
-  pagination.reviews.page = page;
-  
-  try {
-    const from = (page - 1) * pagination.reviews.perPage;
-    const to = from + pagination.reviews.perPage - 1;
-    
-    // Получаем общее количество
-    const { count, error: countError } = await supabase
-      .from('reviews')
-      .select('*', { count: 'exact', head: true })
-      .eq('direction', 'user_to_admin');
-    
-    if (countError) throw countError;
-    pagination.reviews.total = count || 0;
-    
-    // Загружаем страницу
-    const { data, error } = await supabase
-      .from('reviews')
-      .select('id, rating, text, created_at, direction')
-      .eq('direction', 'user_to_admin')
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (error) throw error;
-    
-    if (!data || data.length === 0) {
-      reviewsList.innerHTML = '<p class="empty-state">Пока нет отзывов</p>';
-      renderPagination('reviews', 0);
-      return;
-    }
-    
-    renderReviewsList(data);
-    renderPagination('reviews', Math.ceil(count / pagination.reviews.perPage));
-  } catch (error) {
-    console.error('Ошибка загрузки отзывов:', error);
-    reviewsList.innerHTML = '<p class="empty-state">Ошибка загрузки</p>';
-  }
-}
-
-/**
- * Отрисовка отзывов
- */
-function renderReviewsList(reviews) {
-  reviewsList.innerHTML = reviews.map(review => `
-    <div class="review-item">
-      <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-        <span style="font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; background: ${review.direction === 'admin_to_user' ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' : 'linear-gradient(135deg, var(--success), #22c55e)'}; color: white;">
-          ${review.direction === 'admin_to_user' ? '🎁 От Админа' : '📤 Вы → Админу'}
-        </span>
-      </div>
-      <div class="review-rating">${'★'.repeat(review.rating)}${'☆'.repeat(5 - review.rating)}</div>
-      ${review.text ? `<div class="review-text">${escapeHtml(review.text)}</div>` : ''}
-      <div class="review-date">${formatDate(review.created_at)}</div>
-    </div>
-  `).join('');
-}
-
-// ========== Wishes (Желания) ==========
-
-const wishDropZone = document.getElementById('wish-drop-zone');
-const dropZoneText = document.getElementById('drop-zone-text');
-const imagePreviewContainer = document.getElementById('image-preview-container');
-const removeImageBtn = document.getElementById('remove-image-btn');
-
-/**
- * Предпросмотр изображения
- */
-function initImagePreview() {
-  wishImage.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    
-    if (file) {
-      selectedImageFile = file;
-      showPreview(file);
-    } else {
-      selectedImageFile = null;
-      clearPreview();
-    }
-  });
-  
-  // Кнопка удаления изображения
-  removeImageBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    removeImage();
-  });
-  
-  // Drag and Drop обработчики
-  wishDropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    wishDropZone.classList.add('drag-over');
-    dropZoneText.textContent = '📥 Отпустите файл для загрузки';
-  });
-  
-  wishDropZone.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    wishDropZone.classList.remove('drag-over');
-    dropZoneText.textContent = 'или перетащите изображение сюда';
-  });
-  
-  wishDropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    wishDropZone.classList.remove('drag-over');
-    dropZoneText.textContent = 'или перетащите изображение сюда';
-    
-    const files = e.dataTransfer.files;
-    
-    if (files.length > 0) {
-      const file = files[0];
-      
-      // Проверка типа файла
-      if (!file.type.startsWith('image/')) {
-        showToast('Пожалуйста, выберите изображение!', 'warning');
-        return;
-      }
-      
-      // Проверка размера (макс 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        showToast('Файл слишком большой (макс 5MB)', 'warning');
-        return;
-      }
-      
-      selectedImageFile = file;
-      showPreview(file);
-      
-      // Обновляем input
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      wishImage.files = dataTransfer.files;
-      
-      console.log('🖼️ Файл перетащен:', {
-        name: file.name,
-        size: file.size,
-        type: file.type
-      });
-    }
-  });
-  
-  // Сброс при уходе курсора
-  wishDropZone.addEventListener('dragend', () => {
-    wishDropZone.classList.remove('drag-over');
-    dropZoneText.textContent = 'или перетащите изображение сюда';
-  });
-}
-
-/**
- * Показ предпросмотра
- */
-function showPreview(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    wishPreview.src = e.target.result;
-    imagePreviewContainer.style.display = 'inline-block';
-    dropZoneText.textContent = '✅ Изображение выбрано: ' + file.name;
-    dropZoneText.style.color = 'var(--success)';
-    wishDropZone.classList.add('has-file');
-    removeImageBtn.style.display = 'flex';
-  };
-  reader.readAsDataURL(file);
-}
-
-/**
- * Удаление изображения
- */
-function removeImage() {
-  console.log('🗑️ Удаление изображения');
-  
-  selectedImageFile = null;
-  wishImage.value = '';
-  clearPreview();
-  
-  showToast('Изображение удалено', 'success');
-}
-
-/**
- * Сброс предпросмотра
- */
-function clearPreview() {
-  imagePreviewContainer.style.display = 'none';
-  wishPreview.src = '';
-  dropZoneText.textContent = 'или перетащите изображение сюда';
-  dropZoneText.style.color = 'var(--text-muted)';
-  wishDropZone.classList.remove('has-file');
-  removeImageBtn.style.display = 'none';
-}
-
-/**
- * Конвертация изображения в Base64
- */
-function imageToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-/**
- * Загрузка изображения в Supabase Storage
- */
-async function uploadImage(file, path) {
-  console.log('📤 Загрузка изображения:', {
-    fileName: file.name,
-    fileSize: file.size,
-    fileType: file.type,
-    path: path
-  });
-  
-  try {
-    // Проверка размера файла (макс 5MB для free тарифа)
-    if (file.size > 5 * 1024 * 1024) {
-      throw new Error('Файл слишком большой (макс 5MB)');
-    }
-    
-    // Таймаут 10 секунд
-    const uploadPromise = supabase.storage
-      .from('wishes')
-      .upload(path, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
-    
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Таймаут загрузки (10 сек)')), 10000)
-    );
-    
-    const { data, error } = await Promise.race([uploadPromise, timeoutPromise]);
-    
-    console.log('📥 Результат загрузки:', { data, error });
-    
-    if (error) {
-      console.error('❌ Ошибка загрузки:', error);
-      
-      // Альтернатива: конвертируем в Base64
-      console.log('🔄 Пробуем Base64...');
-      const base64 = await imageToBase64(file);
-      return base64; // Возвращаем Base64 вместо URL
-    }
-    
-    // Получаем публичный URL
-    const { data: urlData } = supabase.storage
-      .from('wishes')
-      .getPublicUrl(path);
-    
-    console.log('✅ Публичный URL:', urlData?.publicUrl);
-    
-    return urlData.publicUrl;
-  } catch (error) {
-    console.error('❌ Ошибка uploadImage:', error);
-    
-    // Фолбэк: Base64
-    try {
-      console.log('🔄 Фолбэк на Base64...');
-      const base64 = await imageToBase64(file);
-      return base64;
-    } catch (e) {
-      console.error('❌ Base64 тоже не сработал:', e);
-      return null;
-    }
-  }
-}
-
-/**
- * Добавление желания
- */
-async function addWish() {
-  const title = wishTitle.value.trim();
-  const description = wishDescription.value.trim();
-  
-  if (!title) {
-    showToast('Введите название желания!', 'warning');
-    return;
-  }
-  
-  // Блокировка кнопки
-  addWishBtn.disabled = true;
-  addWishBtn.textContent = 'Добавление...';
-  
-  try {
-    let imageUrl = null;
-    
-    // Загрузка изображения если выбрано (с таймаутом)
-    if (selectedImageFile) {
-      console.log('🖼️ Попытка загрузки изображения...');
-      try {
-        const fileName = `${Date.now()}_${selectedImageFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-        console.log('Имя файла:', fileName);
-        
-        // Таймаут 10 секунд для загрузки изображения
-        const uploadPromise = uploadImage(selectedImageFile, fileName);
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Таймаут загрузки изображения')), 10000)
-        );
-        
-        imageUrl = await Promise.race([uploadPromise, timeoutPromise]);
-        console.log('✅ Изображение загружено:', imageUrl);
-      } catch (uploadError) {
-        console.error('❌ Не удалось загрузить изображение:', uploadError);
-        showToast('Изображение не загружено, но желание сохранено', 'warning');
-        // Продолжаем без изображения
-      }
-    }
-    
-    console.log('📝 Сохранение желания в базу...');
-    
-    // Таймаут 15 секунд для сохранения в базу
-    const savePromise = supabase.from('wishes').insert({
-      title: title,
-      description: description,
-      image_url: imageUrl,
-      direction: 'user_to_admin'
-    });
-    
-    const timeoutSavePromise = new Promise((resolve, reject) => {
-      setTimeout(() => reject(new Error('Таймаут сохранения (15 сек)')), 15000);
-    });
-    
-    const { data, error } = await Promise.race([savePromise, timeoutSavePromise]);
-    
-    console.log('📥 Результат сохранения:', { data, error });
-    
-    if (error) {
-      console.error('❌ Ошибка сохранения:', error);
-      throw error;
-    }
-    
-    console.log('✅ Желание сохранено!');
-    showToast('Желание добавлено! ✨', 'success');
-    
-    // Очистка формы
-    wishTitle.value = '';
-    wishDescription.value = '';
-    wishImage.value = '';
-    clearPreview();
-    selectedImageFile = null;
-    
-    // Сброс кэша
-    cache.wishes = null;
-    loadWishes();
-  } catch (error) {
-    console.error('Ошибка добавления желания:', error);
-    const message = error.message.includes('Таймаут') 
-      ? 'Проблема соединения. Попробуйте ещё раз...' 
-      : 'Ошибка добавления желания';
-    showToast(message, 'error');
-  } finally {
-    addWishBtn.disabled = false;
-    addWishBtn.textContent = '➕ Добавить желание';
-  }
-}
-
-/**
- * Загрузка желаний
- */
-async function loadWishes(page = 1) {
-  pagination.wishes.page = page;
-  
-  try {
-    const from = (page - 1) * pagination.wishes.perPage;
-    const to = from + pagination.wishes.perPage - 1;
-    
-    // Получаем общее количество
-    const { count, error: countError } = await supabase
-      .from('wishes')
-      .select('*', { count: 'exact', head: true })
-      .eq('direction', 'admin_to_user');
-    
-    if (countError) throw countError;
-    pagination.wishes.total = count || 0;
-    
-    // Загружаем страницу
-    const { data, error } = await supabase
-      .from('wishes')
-      .select('id, title, description, image_url, created_at, direction')
-      .eq('direction', 'admin_to_user')
-      .order('created_at', { ascending: false })
-      .range(from, to);
-    
-    if (error) throw error;
-    
-    if (!data || data.length === 0) {
-      wishesTableBody.innerHTML = `
-        <tr>
-          <td colspan="4" class="empty-state">
-            <div class="empty-state-icon">✨</div>
-            Пока нет желаний
-          </td>
-        </tr>
-      `;
-      renderPagination('wishes', 0);
-      return;
-    }
-    
-    renderWishesTable(data);
-    renderPagination('wishes', Math.ceil(count / pagination.wishes.perPage));
-  } catch (error) {
-    console.error('Ошибка загрузки желаний:', error);
-  }
-}
-
-/**
- * Отрисовка желаний
- */
-function renderWishesTable(wishes) {
-  wishesTableBody.innerHTML = wishes.map(wish => `
-    <tr>
-      <td>
-        <strong>${escapeHtml(wish.title)}</strong>
-      </td>
-      <td>${wish.description ? escapeHtml(wish.description) : '—'}</td>
-      <td>
-        ${wish.image_url 
-          ? `<img src="${wish.image_url}" alt="${escapeHtml(wish.title)}" loading="lazy" style="max-width: 100px; max-height: 80px; border-radius: var(--radius-sm); object-fit: cover;">`
-          : '—'
-        }
-      </td>
-      <td>${formatDate(wish.created_at)}</td>
-    </tr>
-  `).join('');
-}
-
-// ========== Event Listeners ==========
-
-submitMoodBtn.addEventListener('click', submitMood);
-submitReviewBtn.addEventListener('click', submitReview);
-addWishBtn.addEventListener('click', addWish);
-
-// Auth event listeners
-loginBtn.addEventListener('click', () => {
-  loginModal.classList.add('active');
-});
-
-loginSubmitBtn.addEventListener('click', handleLogin);
-
-loginModal.addEventListener('click', (e) => {
-  if (e.target === loginModal) {
-    loginModal.classList.remove('active');
-  }
-});
-
-logoutBtn.addEventListener('click', handleLogout);
-
-// ========== Theme System ==========
-
-function initThemeSystem() {
-  const themeToggleBtn = document.getElementById('theme-toggle-btn');
-  const themeModalOverlay = document.getElementById('theme-modal-overlay');
-  const themeModalClose = document.getElementById('theme-modal-close');
-  const themeOptions = document.querySelectorAll('.theme-option');
-  
-  if (!themeToggleBtn || !themeModalOverlay) {
-    console.warn('⚠️ Элементы темы не найдены');
-    return;
-  }
-  
-  // Theme state
-  let currentTheme = 'classic';
-  
-  /**
-   * Сохранение темы в базу
-   */
-  async function saveTheme(themeName) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      console.log('🎨 Сохранение темы:', {
-        themeName,
-        hasSession: !!session,
-        userId: session?.user?.id,
-        email: session?.user?.email
-      });
-      
-      if (session?.user) {
-        const { data: existing } = await supabase
-          .from('themes')
-          .select('id, user_id')
-          .eq('user_id', session.user.id)
-          .single();
-        
-        console.log('🎨 Существующая тема:', existing);
-        
-        if (existing) {
-          await supabase
-            .from('themes')
-            .update({ theme_name: themeName, updated_at: new Date().toISOString() })
-            .eq('user_id', session.user.id);
-          console.log('🎨 Тема обновлена для user_id:', session.user.id);
-        } else {
-          await supabase
-            .from('themes')
-            .insert({ 
-              user_id: session.user.id, 
-              theme_name: themeName 
-            });
-          console.log('🎨 Тема создана для user_id:', session.user.id);
-        }
-      }
-      
-      // Всегда сохраняем в localStorage
-      localStorage.setItem('userTheme', themeName);
-      console.log('✅ Тема сохранена в localStorage:', themeName);
-    } catch (error) {
-      console.error('❌ Ошибка сохранения темы:', error);
-      localStorage.setItem('userTheme', themeName);
-    }
-  }
-  
-  /**
-   * Загрузка темы пользователя
-   */
-  async function loadUserTheme() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      console.log('🎨 Загрузка темы:', {
-        hasSession: !!session,
-        userId: session?.user?.id,
-        email: session?.user?.email
-      });
-      
-      if (session?.user) {
-        // Авторизованный - загружаем из базы
-        const { data, error } = await supabase
-          .from('themes')
-          .select('theme_name, user_id')
-          .eq('user_id', session.user.id)
-          .single();
-        
-        console.log('🎨 Данные темы из базы:', { data, error });
-        
-        if (data && !error) {
-          currentTheme = data.theme_name;
-          console.log('🎨 Тема загружена из базы:', currentTheme, 'для user_id:', data.user_id);
-        } else {
-          console.log('⚠️ Тема не найдена в базе, используем localStorage');
-          const savedTheme = localStorage.getItem('userTheme');
-          if (savedTheme) {
-            currentTheme = savedTheme;
-          }
-        }
-      } else {
-        // Для неавторизованных - из localStorage
-        console.log('🎨 Пользователь не авторизован, используем localStorage');
-        const savedTheme = localStorage.getItem('userTheme');
-        if (savedTheme) {
-          currentTheme = savedTheme;
-          console.log('🎨 Тема загружена из localStorage:', currentTheme);
-        }
-      }
-      
-      applyTheme(currentTheme);
-      updateThemeSelector();
-    } catch (error) {
-      console.error('❌ Ошибка загрузки темы:', error);
-    }
-  }
-  
-  /**
-   * Применение темы
-   */
-  function applyTheme(themeName) {
-    document.documentElement.setAttribute('data-theme', themeName);
-    localStorage.setItem('userTheme', themeName);
-    currentTheme = themeName;
-    console.log('🎨 Тема применена:', themeName);
-  }
-  
-  /**
-   * Сохранение темы в базу
-   */
-  async function saveTheme(themeName) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session?.user) {
-        // Авторизованный пользователь - сохраняем в базу
-        const { data: existing } = await supabase
-          .from('themes')
-          .select('id')
-          .eq('user_id', session.user.id)
-          .single();
-        
-        if (existing) {
-          await supabase
-            .from('themes')
-            .update({ theme_name: themeName, updated_at: new Date().toISOString() })
-            .eq('user_id', session.user.id);
-        } else {
-          await supabase
-            .from('themes')
-            .insert({ 
-              user_id: session.user.id, 
-              theme_name: themeName 
-            });
-        }
-        showToast('Тема сохранена! 🎨', 'success');
-      }
-      
-      // Всегда сохраняем в localStorage
-      localStorage.setItem('userTheme', themeName);
-      console.log('✅ Тема сохранена:', themeName);
-    } catch (error) {
-      console.error('Ошибка сохранения темы:', error);
-      // Всё равно сохраняем в localStorage
-      localStorage.setItem('userTheme', themeName);
-    }
-  }
-  
-  /**
-   * Обновление селектора тем
-   */
-  function updateThemeSelector() {
-    themeOptions.forEach(option => {
-      if (option.dataset.theme === currentTheme) {
-        option.classList.add('selected');
-      } else {
-        option.classList.remove('selected');
-      }
-    });
-  }
-  
-  /**
-   * Открытие модального окна тем
-   */
-  function openThemeModal() {
-    themeModalOverlay.classList.add('active');
-    updateThemeSelector();
-  }
-  
-  /**
-   * Закрытие модального окна тем
-   */
-  function closeThemeModal() {
-    themeModalOverlay.classList.remove('active');
-  }
-  
-  // Event listeners для тем
-  themeToggleBtn.addEventListener('click', openThemeModal);
-  themeModalClose.addEventListener('click', closeThemeModal);
-  
-  themeModalOverlay.addEventListener('click', (e) => {
-    if (e.target === themeModalOverlay) {
-      closeThemeModal();
-    }
-  });
-      
-  themeOptions.forEach(option => {
-    option.addEventListener('click', () => {
-      const themeName = option.dataset.theme;
-      applyTheme(themeName);
-      saveTheme(themeName);
-      updateThemeSelector();
-      closeThemeModal();
-      
-      // Уведомление при смене темы
-      const themeNames = {
-        classic: 'Классическая',
-        nature: 'Природа',
-        ocean: 'Океан',
-        dark: 'Тёмная',
-        sunset: 'Закат'
-      };
-      const themeDisplayName = themeNames[themeName] || themeName;
-      showToast(`Тема "${themeDisplayName}" применена! 🎨`, 'success');
-    });
-  });
-  
-  // Загрузка темы при инициализации
-  loadUserTheme();
-}
-
-// Инициализация системы тем
-// Вызывается в init()
-
-// ========== Admin Button ==========
-
-/**
- * Проверка авторизации админа для показа кнопки "Назад"
- */
-async function checkAdminAuth() {
-  try {
-    console.log('🔍 checkAdminAuth вызвана');
-    console.log('🔍 ADMIN_EMAIL:', ADMIN_EMAIL);
-    
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    console.log('🔍 Сессия:', session ? 'есть' : 'нет');
-    console.log('🔍 Email сессии:', session?.user?.email);
-    console.log('🔍 Совпадение email:', session?.user?.email === ADMIN_EMAIL);
-    
-    // Скрываем кнопку по умолчанию (убираем класс show)
-    adminBackBtn.classList.remove('show');
-    console.log('🔍 Кнопка скрыта (класс show удалён)');
-    
-    if (session?.user && session.user.email === ADMIN_EMAIL) {
-      adminBackBtn.classList.add('show');
-      console.log('✅ Кнопка "Админка" показана (admin:', session.user.email, ')');
-    } else {
-      console.log('⚠️ Кнопка скрыта - не админ или не авторизован');
-      console.log('   session?.user:', !!session?.user);
-      console.log('   session.user.email:', session?.user?.email);
-      console.log('   ADMIN_EMAIL:', ADMIN_EMAIL);
-    }
-  } catch (error) {
-    console.error('❌ Ошибка проверки авторизации:', error);
-    adminBackBtn.classList.remove('show');
-  }
-}
-
-// ========== Initialization ==========
-
-function init() {
-  console.log('🚀 Секретные Записки запущены');
-  
-  // Сначала загружаем тему из localStorage
-  const savedTheme = localStorage.getItem('userTheme');
-  if (savedTheme) {
-    document.documentElement.setAttribute('data-theme', savedTheme);
-    console.log('🎨 Тема загружена из localStorage:', savedTheme);
-  }
-  
-  initMoodSelector();
-  initStarRating();
-  initImagePreview();
-  
-  subscribeToNotes();
-  subscribeToMoods();
-  subscribeToReviews();
-  subscribeToWishes();
-  
-  // Загрузка темы пользователя из базы (после localStorage)
-  if (typeof initThemeSystem === 'function') {
-    initThemeSystem();
-  }
-  
-  // Инициализация редактора тем уже в theme-creator.js
-  
-  // Проверяем авторизацию админа СРАЗУ при загрузке
-  console.log('🔍 Вызов checkAdminAuth() при загрузке...');
-  checkAdminAuth();
-}
-
-// Запуск после загрузки DOM
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
-}
-
+document.addEventListener('DOMContentLoaded', init);

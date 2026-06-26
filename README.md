@@ -1,220 +1,180 @@
-# 💌 Секретные Записки
+# Love Letters 💕
 
-Персональный сайт для отправки тёплых записок особенному человеку. Built with Supabase + GitHub Pages.
+Совместное пространство для пар — храните воспоминания, ставьте цели вместе, отвечайте на романтические вопросы и создавайте общую историю любви.
 
 ## 🌟 Возможности
 
-### Для получателя (`index.html`)
-- 📝 **Записки** — список всех записок в реальном времени (новые сверху)
-- 😊 **Настроение** — выбор эмоции + комментарий с историей
-- 💭 **Отзывы** — оценка дня звёздами + текстовые отзывы
-- ✨ **Желания** — таблица желаний с возможностью добавления и загрузки изображений
+### 📖 Журнал Воспоминаний (Memory Book)
+- Хронологическая лента ваших лучших моментов
+- Загрузка фото и видео
+- Теги для удобной организации
+- Фильтры по году, месяцу и тегам
+- Markdown-поддержка для описаний
 
-### Для админа (`admin.html`)
-- 🔐 **Авторизация** через Supabase Authentication
-- ➕ **Создание записок** с поддержкой markdown
-- ✏️ **Редактирование** и удаление записок
-- 📤 **Направление сообщений** — выбор кто кому пишет (админ → получатель или получатель → админ)
-- 📊 **Статистика** — количество записок, настроений, отзывов и желаний
-- 😊 **Настроения получателя** — история и статистика настроений
-- 💭 **Отзывы получателя** — все отзывы о дне
-- ✨ **Желания получателя** — полная таблица желаний с изображениями
+### ✨ Совместный Bucket List
+- Категории: Путешествия, Еда, Интим, Развлечения, Финансы, Личностный рост, Дом, Другое
+- Статусы: Запланировано → В процессе → Выполнено
+- Фотоотчёты для выполненных целей
+- Статистика прогресса
+- Фильтры по статусу и категории
 
-## 🚀 Быстрый старт
+### 💭 Love Prompts
+- Готовые вопросы для него и для неё
+- Возможность добавлять свои вопросы
+- Ответы видны обоим с датой
+- Разделение по категориям
 
-### 1. Настройка Supabase
+### 📅 Общий Календарь
+- Важные даты (дни рождения, годовщины)
+- Идеи подарков и планы
+- Автоматические напоминания
+- Визуальные индикаторы событий
 
-1. Перейдите на [Supabase](https://supabase.com)
+### 🎵 Наш Плейлист
+- Добавление треков через YouTube
+- Встроенный плеер
+- Совместное управление списком
+
+### 🎯 Квесты для Пары
+- Готовые романтические задания
+- Возможность создавать свои квесты
+- Фото-доказательства выполнения
+- Отслеживание прогресса
+
+### 🔐 Личный Сейф (Private Vault)
+- Приватный storage bucket
+- Фото и voice messages
+- Доступ только для авторизованных
+- Безопасное хранение личных файлов
+
+## 🛠 Технологии
+
+- **Vanilla JavaScript (ES6+)** — без фреймворков, чистый код
+- **Supabase** — PostgreSQL + Auth + Storage + Realtime
+- **CSS3** — переменные, анимации, адаптивный дизайн
+- **Markdown** — парсинг для описаний
+
+## 📋 Настройка
+
+### 1. Создайте проект Supabase
+
+1. Перейдите на [supabase.com](https://supabase.com)
 2. Создайте новый проект
 3. В **Settings → API** скопируйте:
    - Project URL
-   - `anon` public key
-4. Вставьте значения в `supabase-config.js`:
+   - Anon public key
+
+### 2. Настройте базу данных
+
+1. Откройте **SQL Editor** в панели Supabase
+2. Выполните скрипт из `supabase-schema.sql`
+3. Будут созданы все таблицы и начальные данные (prompts, challenges)
+
+### 3. Настройте конфигурацию
+
+Откройте `supabase-config.js` и замените:
 
 ```javascript
-const supabaseUrl = 'https://YOUR_PROJECT_ID.supabase.co';
-const supabaseAnonKey = 'YOUR_ANON_KEY';
+const supabaseUrl = 'https://your-project.supabase.co';
+const supabaseAnonKey = 'your-anon-key';
+const ADMIN_EMAIL = 'your-email@example.com';
 ```
 
-### 2. Создание таблиц базы данных
+### 4. Настройте Storage Buckets
 
-1. Перейдите в **SQL Editor** в панели Supabase
-2. Скопируйте содержимое файла `supabase-schema.sql`
-3. Выполните скрипт
+Бакеты будут созданы автоматически при выполнении SQL-скрипта:
+- `wishes` — для Bucket List (публичный)
+- `memories` — для воспоминаний (публичный)
+- `challenges` — для квестов (публичный)
+- `private_vault` — для личных файлов (приватный)
 
-Или создайте таблицы вручную:
-
-```sql
--- Записки
-CREATE TABLE notes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  title TEXT NOT NULL,
-  content TEXT NOT NULL,
-  direction VARCHAR(20) DEFAULT 'admin_to_user' CHECK (direction IN ('admin_to_user', 'user_to_admin')),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Настроения
-CREATE TABLE moods (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  mood TEXT NOT NULL,
-  mood_emoji TEXT NOT NULL,
-  mood_text TEXT NOT NULL,
-  comment TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Отзывы
-CREATE TABLE reviews (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
-  text TEXT NOT NULL,
-  direction VARCHAR(20) DEFAULT 'user_to_admin' CHECK (direction IN ('admin_to_user', 'user_to_admin')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Желания
-CREATE TABLE wishes (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  image_url TEXT,
-  direction VARCHAR(20) DEFAULT 'user_to_admin' CHECK (direction IN ('admin_to_user', 'user_to_admin')),
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-### 3. Настройка Storage для изображений
-
-1. Перейдите в **Storage** в панели Supabase
-2. Создайте новый бакет с именем `wishes`
-3. Сделайте его **Public**
-4. В настройках бакета добавьте политику:
-
-```sql
--- Разрешить загрузку изображений всем
-CREATE POLICY "wishes_upload" ON storage.objects
-  FOR INSERT TO public WITH CHECK (bucket_id = 'wishes');
-
--- Разрешить чтение всем
-CREATE POLICY "wishes_read" ON storage.objects
-  FOR SELECT TO public USING (bucket_id = 'wishes');
-```
-
-### 4. Создание пользователя админа
-
-1. Перейдите в **Authentication → Users**
-2. Нажмите **Add User**
-3. Введите email и пароль
-4. Подтвердите email (или отключите подтверждение в настройках)
-
-### 5. Локальная разработка
+### 5. Запуск
 
 ```bash
-# Используем любой локальный сервер
-# Вариант 1: Python
+# Python
 python -m http.server 8000
 
-# Вариант 2: Node.js (npx)
-npx serve .
+# Node.js
+npx serve
 
-# Вариант 3: VS Code Live Server
-# Установите расширение и нажмите "Go Live"
+# Или просто откройте index.html в браузере
 ```
-
-Откройте `http://localhost:8000` в браузере.
-
-### 6. Развёртывание на GitHub Pages
-
-1. Создайте репозиторий на GitHub
-2. Загрузите файлы проекта:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
-   git push -u origin main
-   ```
-
-3. В настройках репозитория:
-   - Перейдите в **Settings** → **Pages**
-   - Выберите ветку **main** и папку **/(root)**
-   - Нажмите **Save**
-
-4. Через несколько минут сайт будет доступен по адресу:
-   ```
-   https://YOUR_USERNAME.github.io/YOUR_REPO/
-   ```
 
 ## 📁 Структура проекта
 
 ```
-/
-├── index.html              # Главная страница (для получателя)
-├── admin.html              # Админ-панель
-├── style.css               # Стили (тёмная тема)
-├── script.js               # Логика для index.html
-├── admin.js                # Логика для admin.html
+├── index.html              # Главное приложение
+├── admin.html              # Панель администратора
+├── script.js               # Основная логика
+├── admin.js                # Логика админки
+├── utils.js                # Общие утилиты
+├── style.css               # Основные стили
+├── themes.css              # Темы оформления
+├── theme-creator.js        # Конструктор тем
 ├── supabase-config.js      # Конфигурация Supabase
-├── supabase-schema.sql     # SQL схема для базы данных
-├── assets/
-│   └── icons/              # Иконки (опционально)
-└── README.md               # Этот файл
+├── supabase-schema.sql     # Схема БД + RLS + начальные данные
+├── setup-storage.sql       # Настройка Storage
+└── README.md               # Документация
 ```
 
-## 🎨 Markdown в записках
+## 🎨 Темы оформления
 
-Поддерживается базовый markdown:
+Встроенные темы:
+- 🟣 Классическая (фиолетовая)
+- 🟢 Природа (зелёная)
+- 🔵 Океан (синяя)
+- ⚫ Тёмная
+- 🟠 Закат (оранжевая)
 
-```markdown
-# Заголовок 1
-## Заголовок 2
-### Заголовок 3
-
-**Жирный текст**
-*Курсив*
-
-- Элемент списка
-- Ещё элемент
-
-[Ссылка](https://example.com)
-```
+Также доступен **конструктор тем** для создания собственных вариантов.
 
 ## 🔒 Безопасность
 
-- **Админ-панель** защищена Supabase Authentication
-- **RLS Policies** ограничивают запись записок только для авторизованных
-- **Storage Policies** ограничивают тип загружаемых файлов (только изображения)
+- **RLS (Row Level Security)** — защита на уровне строк для всех таблиц
+- **Аутентификация** — через Supabase Auth
+- **Валидация** — на уровне базы данных (CHECK constraints)
+- **Приватный бакет** — отдельный bucket для личных файлов
 
-### Рекомендации по безопасности:
+## 📊 База данных
 
-1. Используйте сложный пароль для админ-аккаунта
-2. Включите **Email Confirmation** для админ-аккаунта
-3. Настройте RLS политики под ваши нужды
-4. Регулярно делайте бэкапы базы данных
+### Таблицы
 
-## 🛠️ Технологии
+| Таблица | Описание |
+|---------|----------|
+| `memories` | Журнал воспоминаний с фото/видео |
+| `wishes` | Совместный Bucket List |
+| `prompts` | Вопросы для пары |
+| `prompt_responses` | Ответы на вопросы |
+| `important_dates` | Календарь важных событий |
+| `playlist` | Общий плейлист YouTube |
+| `challenges` | Квесты и задания |
 
-- **Frontend:** HTML5, CSS3, Vanilla JavaScript (ES Modules)
-- **Backend:** Supabase (PostgreSQL, Storage, Authentication, Realtime)
-- **Хостинг:** GitHub Pages
-- **Supabase SDK:** v2.x
+## 🔄 Realtime
 
-## 💡 Идеи для улучшения
+Приложение использует Supabase Realtime для мгновенного обновления:
+- Журнал воспоминаний
+- Bucket List
+- Плейлист
+- Квесты
 
-- [ ] Добавить тёмную/светлую тему переключателем
-- [ ] Реализовать загрузку картинок в записки
-- [ ] Добавить уведомления о новых записках (Email/Push)
-- [ ] Экспорт данных в JSON
-- [ ] Статистика по настроениям (графики)
-- [ ] Комментарии к желаниям
-- [ ] Отметка желаний как "исполнено"
+## 📱 Адаптивность
 
-## 📝 Лицензия
+Полностью адаптивный дизайн:
+- 📱 Мобильная версия (с бургер-меню)
+- 💻 Десктопная версия (с боковой панелью)
+- 📲 Планшетная версия
 
-Этот проект создан для личного использования. Чувствуйте себя свободно модифицировать его под свои нужды!
+## 🚀 Планы развития
+
+- [ ] Уведомления о предстоящих событиях (Email/Push)
+- [ ] Экспорт воспоминаний в PDF
+- [ ] Карта посещённых мест
+- [ ] Таймер отношений
+- [ ] Совместный бюджет
+
+## 📄 Лицензия
+
+MIT — свободное использование и модификация
 
 ---
 
